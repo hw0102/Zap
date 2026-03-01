@@ -82,7 +82,7 @@
 
   const signaling = new SignalingClient();
   const myDeviceType = detectDeviceType();
-  const myDeviceName = getDefaultDeviceName();
+  let myDeviceName = getDefaultDeviceName();
 
   signaling.connect(myDeviceName, myDeviceType);
 
@@ -222,6 +222,7 @@
   renameSaveBtn.addEventListener('click', () => {
     const name = renameInput.value.trim();
     if (name) {
+      myDeviceName = name;
       localStorage.setItem('landrop-device-name', name);
       deviceNameEl.textContent = name;
       // Re-register with new name
