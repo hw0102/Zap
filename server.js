@@ -5,6 +5,7 @@ const { WebSocketServer } = require('ws');
 
 const isDev = process.argv.includes('--dev');
 const PORT = parseInt(process.env.PORT || '3000', 10);
+const HOST = process.env.HOST || (isDev ? '127.0.0.1' : '0.0.0.0');
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -31,9 +32,27 @@ if (!isDev && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
   console.log('Starting HTTP server (dev mode)');
 }
 
+let startupFailed = false;
+function failStartup(err) {
+  if (startupFailed) return;
+  startupFailed = true;
+
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Set PORT to another value and retry.`);
+  } else if (err.code === 'EPERM' || err.code === 'EACCES') {
+    console.error(`Permission denied while binding ${HOST}:${PORT} (${err.code}).`);
+    console.error(`Try a different port with: PORT=3001 npm run dev`);
+  } else {
+    console.error(`Failed to start server on ${HOST}:${PORT}.`, err);
+  }
+
+  process.exit(1);
+}
+
 // --- Signaling ---
 
 const wss = new WebSocketServer({ server });
+wss.on('error', failStartup);
 const peers = new Map(); // peerId -> { ws, name, deviceType }
 let nextId = 1;
 
@@ -105,8 +124,12 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(PORT, () => {
-  const proto = server.address().family === 'IPv6' ? 'http' : 'http';
-  console.log(`Zap server listening on port ${PORT}`);
-  if (isDev) console.log(`  http://localhost:${PORT}`);
+server.on('error', failStartup);
+
+server.listen(PORT, HOST, () => {
+  console.log(`Zap server listening on ${HOST}:${PORT}`);
+  if (isDev) {
+    const localHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
+    console.log(`  http://${localHost}:${PORT}`);
+  }
 });
