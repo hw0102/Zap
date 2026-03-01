@@ -107,6 +107,6 @@ wss.on('connection', (ws) => {
 
 server.listen(PORT, () => {
   const proto = server.address().family === 'IPv6' ? 'http' : 'http';
-  console.log(`LanDrop server listening on port ${PORT}`);
+  console.log(`Zap server listening on port ${PORT}`);
   if (isDev) console.log(`  http://localhost:${PORT}`);
 });

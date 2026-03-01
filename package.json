@@ -1,5 +1,5 @@
 {
-  "name": "landrop",
+  "name": "zap",
   "version": "1.0.0",
   "description": "Peer-to-peer LAN file sharing via WebRTC",
   "main": "server.js",

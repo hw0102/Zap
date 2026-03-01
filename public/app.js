@@ -1,5 +1,5 @@
 /**
- * app.js — Application logic and UI state management for LanDrop.
+ * app.js — Application logic and UI state management for Zap.
  * Wires together signaling, WebRTC, and file transfer modules.
  */
 
@@ -16,7 +16,7 @@
   }
 
   function getDefaultDeviceName() {
-    const stored = localStorage.getItem('landrop-device-name');
+    const stored = localStorage.getItem('zap-device-name');
     if (stored) return stored;
 
     const type = detectDeviceType();
@@ -262,7 +262,7 @@
     const name = renameInput.value.trim();
     if (name) {
       myDeviceName = name;
-      localStorage.setItem('landrop-device-name', name);
+      localStorage.setItem('zap-device-name', name);
       deviceNameEl.textContent = name;
       // Re-register with new name
       signaling.send({ type: 'register', name, deviceType: myDeviceType });

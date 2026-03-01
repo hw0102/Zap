@@ -1,5 +1,5 @@
 /**
- * signaling.js — WebSocket client for the LanDrop signaling server.
+ * signaling.js — WebSocket client for the Zap signaling server.
  * Handles device registration, peer discovery, and relaying WebRTC signaling.
  */
 

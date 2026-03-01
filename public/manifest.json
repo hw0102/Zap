@@ -1,6 +1,6 @@
 {
-  "name": "LanDrop",
-  "short_name": "LanDrop",
+  "name": "Zap",
+  "short_name": "Zap",
   "description": "Peer-to-peer LAN file sharing via WebRTC",
   "start_url": "/",
   "display": "standalone",

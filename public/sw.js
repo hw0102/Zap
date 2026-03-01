@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'landrop-v2';
+const CACHE_VERSION = 'zap-v2';
 const ASSETS = [
   '/',
   '/index.html',

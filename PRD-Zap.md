@@ -1,4 +1,4 @@
-# PRD: LanDrop — Peer-to-Peer LAN File Sharing
+# PRD: Zap — Peer-to-Peer LAN File Sharing
 
 **Domain:** `fileshare.example.com`
 **Author:** REDACTED
@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-LanDrop is a self-hosted, browser-based file sharing tool that enables instant peer-to-peer file transfers between devices on the same local network. Files travel directly between browsers via WebRTC data channels — no cloud, no intermediary storage, full LAN speed.
+Zap is a self-hosted, browser-based file sharing tool that enables instant peer-to-peer file transfers between devices on the same local network. Files travel directly between browsers via WebRTC data channels — no cloud, no intermediary storage, full LAN speed.
 
 Think of it as a more reliable, cross-platform AirDrop that works between any two devices with a modern browser.
 
@@ -213,7 +213,7 @@ If the network has untrusted devices (guests on Wi-Fi):
 ## 9. File Structure
 
 ```
-landrop/
+zap/
 ├── server.js               # Express + WebSocket signaling server
 ├── package.json
 ├── certs/                   # TLS certificate and key (gitignored)
@@ -271,7 +271,7 @@ V2 adds a **hotspot mode** that lets two devices transfer files using only a mob
 
 Wi-Fi Direct (which AirDrop uses under the hood via Apple's AWDL protocol) requires OS-level access to the Wi-Fi radio — discovering nearby devices, negotiating a direct Wi-Fi link, establishing an ad-hoc network. Browsers are sandboxed and expose no APIs for this. The Web Bluetooth API is too slow (~100KB/s) and Web NFC is limited to tiny payloads. This is fundamentally why AirDrop, Nearby Share, etc. are native apps.
 
-A mobile hotspot, however, creates a real local network — and that's all LanDrop needs.
+A mobile hotspot, however, creates a real local network — and that's all Zap needs.
 
 ### 11.3 How It Works
 
@@ -321,7 +321,7 @@ To support hotspot mode, the frontend must work offline after the first visit:
 Identical to MVP — no user action needed beyond creating/joining the hotspot. Devices discover each other and transfer as usual.
 
 **Fallback path (no server available):**
-1. Both devices open LanDrop from PWA cache
+1. Both devices open Zap from PWA cache
 2. App detects no signaling server and shows "Hotspot Mode" banner
 3. Device A taps "Create Session" → generates WebRTC offer → displays QR code
 4. Device B taps "Join Session" → scans QR code → generates answer → displays QR code

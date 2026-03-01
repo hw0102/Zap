@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "zap-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js", "--dev"],
+      "port": 3000
+    }
+  ]
+}
