@@ -1,6 +1,6 @@
 # PRD: Zap — Peer-to-Peer LAN File Sharing
 
-**Domain:** `fileshare.example.com`
+**Domain:** `zap.example.com`
 **Author:** REDACTED
 **Status:** Draft
 **Last Updated:** 2026-03-01
@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-Zap is a self-hosted, browser-based file sharing tool that enables instant peer-to-peer file transfers between devices on the same local network. Files travel directly between browsers via WebRTC data channels — no cloud, no intermediary storage, full LAN speed.
+Zap is a browser-based file sharing tool that enables instant peer-to-peer file transfers between devices on the same local network. Files travel directly between browsers via WebRTC data channels — no file relay, no intermediary storage, full LAN speed.
 
 Think of it as a more reliable, cross-platform AirDrop that works between any two devices with a modern browser.
 
@@ -23,13 +23,13 @@ A browser-based solution eliminates installation friction, works on any device w
 
 - **Zero-install:** Open a URL on any device and start transferring immediately
 - **Peer-to-peer:** File data never touches the server; transfers go directly between browsers
-- **LAN-only:** The service is only accessible within the local network
+- **LAN-first:** Transfers are optimized for same-network peers and should not depend on TURN relays
 - **Fast:** Transfers should approach the theoretical Wi-Fi speed limit
 - **Simple:** The UI should be immediately obvious — no accounts, no configuration
 
 ## 4. Non-Goals (MVP)
 
-- Public internet transfers (this is LAN-only by design)
+- Guaranteed public internet transfers across different networks (no TURN relay in MVP)
 - User accounts or authentication (may add optional PIN pairing later)
 - File storage or history (files are streamed, never persisted)
 - Native app wrappers
@@ -66,7 +66,7 @@ A minimal Node.js + WebSocket server responsible for:
 
 The server handles only small JSON messages (typically < 1KB each). It never sees or stores file data.
 
-**Runtime:** Node.js with `ws` (or Socket.IO) for WebSocket support, `express` for serving the static frontend, and `https` for TLS termination.
+**Runtime:** Node.js with `ws` (or Socket.IO) for persistent WebSocket signaling. The frontend is deployed separately on Vercel.
 
 ### 5.3 WebRTC Peer-to-Peer Layer
 
@@ -97,20 +97,32 @@ Since WebRTC data channels have a per-message size limit (~256KB, varies by brow
 
 **Flow control:** Monitor `RTCDataChannel.bufferedAmount` before sending each chunk. If the buffer exceeds a threshold (e.g., 1MB), pause sending until `bufferedamountlow` event fires. This prevents overwhelming the channel and ensures smooth progress reporting.
 
-### 5.5 Serving & TLS
+### 5.5 Hosting, DNS, and TLS (Vercel + Cloudflare)
 
-**Hosting:** The signaling server also serves the static frontend (HTML/CSS/JS). It runs on a machine on the local network (e.g., a Mac, Raspberry Pi, or NAS).
+**Frontend hosting (Vercel):**
+The static frontend is deployed on Vercel and served at `https://zap.example.com`.
 
-**DNS:** An A record for `fileshare.example.com` points to the server's **local IP** (e.g., `192.168.1.x`). The domain resolves but is only reachable from within the network.
+**DNS (Cloudflare):**
+`example.com` remains managed in Cloudflare DNS.
+
+1. Add `zap` as a custom domain in Vercel
+2. In Cloudflare, create `CNAME zap -> cname.vercel-dns.com` (or the exact target shown in Vercel)
+3. Use `DNS only` proxy mode during setup/verification
+4. Keep TTL on Auto
+
+**Signaling backend:**
+WebRTC signaling needs long-lived WebSocket connections and in-memory presence state. Keep the existing Node.js + `ws` signaling service on a long-running host (e.g., Railway/Fly/Render or your own server), exposed as `wss://signal.zap.example.com`.
+
+In Cloudflare DNS, create `CNAME signal -> <signaling-provider-hostname>`.
+
+The frontend reads a `SIGNALING_URL` value (e.g., `wss://signal.zap.example.com`) and connects there for discovery/offer-answer/ICE relay.
 
 **TLS (required):**
-Safari on iOS requires HTTPS for WebRTC APIs. A valid TLS certificate is obtained via Let's Encrypt using the **DNS-01 challenge**:
+Safari on iOS requires HTTPS for WebRTC APIs.
 
-1. Install `certbot` with a DNS plugin (e.g., Cloudflare)
-2. Run: `certbot certonly --dns-cloudflare -d fileshare.example.com`
-3. Certbot adds a TXT record to `_acme-challenge.fileshare.example.com`, Let's Encrypt verifies it, and issues the cert
-4. The Node.js server loads the cert/key files and serves over HTTPS
-5. Set up a cron job or systemd timer for auto-renewal
+- Vercel auto-provisions and renews TLS for `zap.example.com`
+- The signaling host must also serve valid TLS for `signal.zap.example.com`
+- No local certbot flow is required for production deployment
 
 ---
 
@@ -149,11 +161,11 @@ Auto-assign friendly names based on User-Agent parsing:
 The UI must work well on:
 - iPhone Safari (primary mobile target)
 - macOS Safari / Chrome (primary desktop target)
-- Minimum: any modern browser on the LAN
+- Minimum: any modern browser with HTTPS and WebRTC support
 
 ### 6.4 Interaction Flow
 
-1. Open `https://fileshare.example.com` on both devices
+1. Open `https://zap.example.com` on both devices
 2. Both devices appear in each other's peer list automatically
 3. On Device A: drag a file onto the drop zone (or tap to select on mobile)
 4. Device A initiates a WebRTC connection to Device B via signaling
@@ -165,11 +177,11 @@ The UI must work well on:
 
 ## 7. Security
 
-### 7.1 Network-Level Isolation
+### 7.1 Internet-Exposed Entry Point
 
-- The signaling server binds to the LAN interface IP (not `0.0.0.0`), or alternatively binds to all interfaces but the DNS only resolves to the local IP
-- The domain's A record points to a private IP — unreachable from the public internet
-- No port forwarding or firewall rules needed
+- `zap.example.com` is publicly reachable through Vercel HTTPS
+- The signaling endpoint (`signal.zap.example.com`) is internet-reachable but relays only signaling metadata (no file payload)
+- Security can no longer rely on private-IP isolation; transfer consent and signaling controls become primary
 
 ### 7.2 Transport Security
 
@@ -198,13 +210,15 @@ If the network has untrusted devices (guests on Wi-Fi):
 
 ## 8. Tech Stack
 
-| Component         | Technology                          |
-|-------------------|-------------------------------------|
-| Signaling server  | Node.js + Express + ws              |
-| TLS               | Let's Encrypt (DNS-01 via certbot)  |
-| Frontend          | Vanilla HTML/CSS/JS (no framework)  |
-| Peer-to-peer      | WebRTC (RTCPeerConnection + RTCDataChannel) |
-| File handling     | File API, Blob, ArrayBuffer         |
+| Component         | Technology                                          |
+|-------------------|-----------------------------------------------------|
+| Frontend hosting  | Vercel                                              |
+| DNS               | Cloudflare                                          |
+| Signaling server  | Node.js + `ws` on a long-running host               |
+| TLS               | Managed certs (Vercel for app + host cert for signal) |
+| Frontend          | Vanilla HTML/CSS/JS (no framework)                  |
+| Peer-to-peer      | WebRTC (RTCPeerConnection + RTCDataChannel)         |
+| File handling     | File API, Blob, ArrayBuffer                         |
 
 **Why vanilla JS:** The frontend is simple enough that a framework adds complexity without benefit. A single HTML file with embedded CSS/JS is easy to serve, debug, and maintain.
 
@@ -216,16 +230,17 @@ If the network has untrusted devices (guests on Wi-Fi):
 zap/
 ├── server.js               # Express + WebSocket signaling server
 ├── package.json
-├── certs/                   # TLS certificate and key (gitignored)
+├── certs/                   # Local TLS certs for non-Vercel dev (optional)
 │   ├── fullchain.pem
 │   └── privkey.pem
-├── public/                  # Static frontend served by Express
+├── public/                  # Static frontend deployed to Vercel
 │   ├── index.html           # Main (and only) HTML page
 │   ├── style.css            # Responsive styles
 │   ├── app.js               # Application logic, UI state management
 │   ├── signaling.js         # WebSocket client for signaling
 │   ├── webrtc.js            # RTCPeerConnection and data channel management
 │   └── transfer.js          # File chunking, reassembly, progress tracking
+├── vercel.json              # Vercel routing/build config (if needed)
 ├── .gitignore
 └── README.md
 ```
@@ -242,7 +257,7 @@ zap/
 | M2 | WebRTC connection establishment between two browsers | 1 day |
 | M3 | File chunking and transfer over data channel | 1 day |
 | M4 | Frontend UI with drag-and-drop, progress, and download | 1-2 days |
-| M5 | TLS setup with Let's Encrypt DNS-01 challenge | 0.5 day |
+| M5 | Vercel deployment + custom domain + TLS + signaling URL wiring | 0.5 day |
 | M6 | Testing across Mac Safari/Chrome ↔ iPhone Safari | 0.5 day |
 
 **Total MVP estimate: ~5-6 days**
@@ -278,7 +293,7 @@ A mobile hotspot, however, creates a real local network — and that's all Zap n
 1. Device A (e.g., iPhone) enables its **Personal Hotspot** (Settings → Personal Hotspot)
 2. Device B (e.g., MacBook or Android phone) joins Device A's hotspot Wi-Fi network
 3. Both devices are now on the same local network, created by the hotspot
-4. Both open `https://fileshare.example.com` and transfer files normally via WebRTC
+4. Both open `https://zap.example.com` and transfer files normally via WebRTC
 5. File data travels locally over the hotspot's Wi-Fi radio — **it never touches cellular**
 
 The only cellular data used is the initial DNS resolution and page load (~200-500 KB). Once the page is loaded, cellular data can even be disabled entirely and transfers will continue.
@@ -286,9 +301,9 @@ The only cellular data used is the initial DNS resolution and page load (~200-50
 ### 11.4 Technical Considerations
 
 **Signaling server accessibility:**
-The signaling server runs on a home machine, which won't be on the hotspot network. Three approaches:
+In the new deployment model, signaling is hosted on the internet (`signal.zap.example.com`). If the hotspot has internet access, signaling works normally. If internet is unavailable, use an offline fallback. Three approaches:
 
-**Option A — Portable signaling server (recommended for common case):**
+**Option A — Portable signaling server (recommended for no-internet case):**
 Run the signaling server on the device that joins the hotspot (e.g., if iPhone is the hotspot, run the server on the Mac that joins it). The Mac's local IP on the hotspot network becomes the signaling endpoint. This requires the server to be installed on a device you bring with you, but provides the smoothest UX.
 
 **Option B — Pre-cached PWA + manual signaling fallback (recommended as fallback):**
@@ -302,7 +317,7 @@ The frontend is a PWA with a service worker that caches all assets. When the sig
 This involves two QR scans (more friction) but requires zero infrastructure and works fully offline.
 
 **Option C — Embedded signaling via shared URL hash:**
-One device generates the SDP offer, encodes it as a compressed base64 string in a URL fragment (e.g., `fileshare.example.com/#offer=<encoded>`). The other device opens this URL (via QR code), decodes the offer, generates an answer, and encodes it back. Slightly simpler than Option B but limited by URL length constraints for large SDP blobs.
+One device generates the SDP offer, encodes it as a compressed base64 string in a URL fragment (e.g., `zap.example.com/#offer=<encoded>`). The other device opens this URL (via QR code), decodes the offer, generates an answer, and encodes it back. Slightly simpler than Option B but limited by URL length constraints for large SDP blobs.
 
 **Recommended strategy:** Option A for the common case (Mac + iPhone), with Option B as a graceful offline fallback.
 
@@ -358,5 +373,5 @@ Identical to MVP — no user action needed beyond creating/joining the hotspot. 
 2. **Multiple simultaneous transfers:** Should the MVP support sending to multiple peers at once, or is one-at-a-time sufficient?
 3. **Large file handling:** For files > 1GB, should we implement `ReadableStream`-based chunking to avoid loading the entire file into memory?
 4. **Notification API:** Should the receiver get a browser notification when a transfer request comes in (useful if the tab is in the background)?
-5. **mDNS alternative:** Could `fileshare.local` via mDNS replace the real domain, avoiding TLS/DNS complexity entirely? (Tradeoff: mDNS is flaky on some platforms and Safari may still require HTTPS.)
+5. **mDNS alternative:** Could `zap.local` via mDNS replace the real domain, avoiding TLS/DNS complexity entirely? (Tradeoff: mDNS is flaky on some platforms and Safari may still require HTTPS.)
 6. **SDP compression for QR codes:** In hotspot mode, can we use SDP munging or compression (e.g., stripping unnecessary candidates, gzip + base64) to keep QR codes small enough for reliable scanning?
