@@ -749,6 +749,17 @@ body {
   line-height: 1.5;
 }
 
+.hotspot-steps {
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .hotspot-actions {
   display: flex;
   gap: 16px;
