@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0a1a">
+  <title>LanDrop</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-inner">
+        <div class="logo">
+          <div class="logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h1>LanDrop</h1>
+        </div>
+        <div class="device-badge" id="deviceBadge">
+          <span class="status-dot"></span>
+          <span id="deviceName">Connecting...</span>
+          <button class="rename-btn" id="renameBtn" title="Rename device">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main content -->
+    <main class="main">
+      <!-- Lobby state: waiting for peers -->
+      <section id="lobbyView" class="view active">
+        <div class="empty-state">
+          <div class="radar">
+            <div class="radar-ring"></div>
+            <div class="radar-ring"></div>
+            <div class="radar-ring"></div>
+            <div class="radar-dot"></div>
+          </div>
+          <h2>Searching for devices...</h2>
+          <p>Open <strong>this URL</strong> on another device on the same network</p>
+        </div>
+      </section>
+
+      <!-- Peers available -->
+      <section id="peersView" class="view">
+        <div class="peers-grid" id="peersGrid"></div>
+
+        <div class="drop-zone-container">
+          <div class="drop-zone" id="dropZone">
+            <div class="drop-zone-content">
+              <div class="drop-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+              </div>
+              <p class="drop-label">Drop files here or <button class="browse-btn" id="browseBtn">browse</button></p>
+              <p class="drop-hint">Select a device above, then send a file</p>
+            </div>
+          </div>
+          <input type="file" id="fileInput" hidden multiple>
+        </div>
+      </section>
+
+      <!-- Transfer in progress -->
+      <section id="transferView" class="view">
+        <div class="transfer-card" id="transferCard">
+          <div class="transfer-header">
+            <div class="transfer-icon" id="transferIcon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+                <polyline points="13 2 13 9 20 9"/>
+              </svg>
+            </div>
+            <div class="transfer-info">
+              <h3 id="transferFileName">file.zip</h3>
+              <p id="transferFileSize">0 MB</p>
+            </div>
+            <div class="transfer-direction" id="transferDirection">Sending</div>
+          </div>
+
+          <div class="progress-container">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-stats">
+              <span id="progressPercent">0%</span>
+              <span id="progressSpeed">-- MB/s</span>
+              <span id="progressEta">--</span>
+            </div>
+          </div>
+
+          <div class="transfer-actions">
+            <button class="btn btn-cancel" id="cancelBtn">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Transfer complete -->
+        <div class="transfer-complete" id="transferComplete" hidden>
+          <div class="success-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </div>
+          <h3>Transfer Complete!</h3>
+          <p id="completeMessage"></p>
+          <button class="btn btn-primary" id="sendAnotherBtn">Send Another</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Incoming file request modal -->
+    <div class="modal-overlay" id="incomingModal" hidden>
+      <div class="modal">
+        <div class="modal-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </div>
+        <h3>Incoming File</h3>
+        <div class="modal-file-info">
+          <p class="modal-filename" id="modalFileName">photo.jpg</p>
+          <p class="modal-filesize" id="modalFileSize">2.4 MB</p>
+          <p class="modal-from">from <strong id="modalFromDevice">Device</strong></p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-decline" id="declineBtn">Decline</button>
+          <button class="btn btn-accept" id="acceptBtn">Accept</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rename modal -->
+    <div class="modal-overlay" id="renameModal" hidden>
+      <div class="modal modal-sm">
+        <h3>Rename Device</h3>
+        <input type="text" class="rename-input" id="renameInput" placeholder="Enter device name" maxlength="30">
+        <div class="modal-actions">
+          <button class="btn btn-decline" id="renameCancelBtn">Cancel</button>
+          <button class="btn btn-accept" id="renameSaveBtn">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="signaling.js"></script>
+  <script src="webrtc.js"></script>
+  <script src="transfer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
