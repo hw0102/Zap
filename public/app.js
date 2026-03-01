@@ -69,6 +69,27 @@
   const declineBtn = $('#declineBtn');
   const completeMessage = $('#completeMessage');
 
+  // Hotspot mode DOM refs
+  const hotspotView = $('#hotspotView');
+  const hotspotActions = $('#hotspotActions');
+  const createSessionBtn = $('#createSessionBtn');
+  const joinSessionBtn = $('#joinSessionBtn');
+  const qrDisplay = $('#qrDisplay');
+  const qrCanvas = $('#qrCanvas');
+  const qrTitle = $('#qrTitle');
+  const qrSubtitle = $('#qrSubtitle');
+  const qrBackBtn = $('#qrBackBtn');
+  const qrScanner = $('#qrScanner');
+  const scannerVideo = $('#scannerVideo');
+  const scannerCanvas = $('#scannerCanvas');
+  const scanTitle = $('#scanTitle');
+  const scanSubtitle = $('#scanSubtitle');
+  const scanBackBtn = $('#scanBackBtn');
+  const hotspotConnected = $('#hotspotConnected');
+  const hotspotDropZone = $('#hotspotDropZone');
+  const hotspotBrowseBtn = $('#hotspotBrowseBtn');
+  const hotspotFileInput = $('#hotspotFileInput');
+
   // ---- State ----
 
   let selectedPeerId = null;
@@ -77,6 +98,8 @@
   let fileSender = null;
   let fileReceiver = null;
   let pendingRequest = null; // incoming file request awaiting accept/decline
+  let hotspot = null; // HotspotSignaling instance when in hotspot mode
+  let isOffline = false;
 
   // ---- Signaling ----
 
@@ -98,6 +121,14 @@
 
   signaling.on('disconnected', () => {
     deviceNameEl.textContent = 'Reconnecting...';
+    // After a delay, if still not connected, offer hotspot mode
+    setTimeout(() => {
+      if (!signaling.myId || (signaling.ws && signaling.ws.readyState !== WebSocket.OPEN)) {
+        isOffline = true;
+        deviceNameEl.textContent = 'Offline';
+        showView('hotspot');
+      }
+    }, 4000);
   });
 
   // ---- Incoming signaling (callee side) ----
@@ -173,10 +204,18 @@
     lobbyView.classList.toggle('active', name === 'lobby');
     peersView.classList.toggle('active', name === 'peers');
     transferView.classList.toggle('active', name === 'transfer');
+    hotspotView.classList.toggle('active', name === 'hotspot');
 
     if (name === 'transfer') {
       transferCard.hidden = false;
       transferComplete.hidden = true;
+    }
+
+    if (name === 'hotspot') {
+      hotspotActions.hidden = false;
+      qrDisplay.hidden = true;
+      qrScanner.hidden = true;
+      hotspotConnected.hidden = true;
     }
   }
 
@@ -414,5 +453,164 @@
   // ---- Prevent default drag on document ----
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => e.preventDefault());
+
+  // ---- Hotspot Mode ----
+
+  const QR_SIZE = 280;
+
+  function showHotspotSubview(sub) {
+    hotspotActions.hidden = sub !== 'actions';
+    qrDisplay.hidden = sub !== 'qr-display';
+    qrScanner.hidden = sub !== 'scanner';
+    hotspotConnected.hidden = sub !== 'connected';
+  }
+
+  // Creator: generate offer QR, then scan answer QR
+  createSessionBtn.addEventListener('click', async () => {
+    try {
+      if (hotspot) hotspot.close();
+      hotspot = new HotspotSignaling();
+
+      qrTitle.textContent = 'Scan this QR code';
+      qrSubtitle.textContent = 'The other device should tap "Join Session" and scan this code';
+      showHotspotSubview('qr-display');
+      await hotspot.createSession(qrCanvas, QR_SIZE);
+
+      // Now we need to scan the answer QR
+      qrTitle.textContent = 'Now scan their QR code';
+      qrSubtitle.textContent = 'The other device will show a QR code — scan it to connect';
+      showHotspotSubview('scanner');
+      await hotspot.startCamera(scannerVideo);
+      await hotspot.scanAnswerAndConnect(scannerVideo, scannerCanvas);
+
+      onHotspotConnected();
+    } catch (err) {
+      console.error('Create session error:', err);
+      if (hotspot) { hotspot.close(); hotspot = null; }
+      showHotspotSubview('actions');
+    }
+  });
+
+  // Joiner: scan offer QR, then show answer QR
+  joinSessionBtn.addEventListener('click', async () => {
+    try {
+      if (hotspot) hotspot.close();
+      hotspot = new HotspotSignaling();
+
+      scanTitle.textContent = 'Scan their QR code';
+      scanSubtitle.textContent = 'Point your camera at the QR code on the other device';
+      showHotspotSubview('scanner');
+      await hotspot.startCamera(scannerVideo);
+      await hotspot.scanOfferAndRespond(scannerVideo, scannerCanvas);
+
+      // Show our answer QR for the creator to scan
+      qrTitle.textContent = 'Show this to the other device';
+      qrSubtitle.textContent = 'They need to scan this QR code to complete the connection';
+      showHotspotSubview('qr-display');
+      await hotspot.showAnswer(qrCanvas, QR_SIZE);
+
+      // Wait for the data channel to open
+      await hotspot.waitForConnection();
+      onHotspotConnected();
+    } catch (err) {
+      console.error('Join session error:', err);
+      if (hotspot) { hotspot.close(); hotspot = null; }
+      showHotspotSubview('actions');
+    }
+  });
+
+  function onHotspotConnected() {
+    showHotspotSubview('connected');
+    deviceNameEl.textContent = myDeviceName;
+
+    const ch = hotspot.getDataChannel();
+    // Listen for incoming files in hotspot mode (receiver side)
+    ch.onmessage = (e) => {
+      if (!fileReceiver) {
+        // Auto-create receiver on first data
+        fileReceiver = new FileReceiver();
+        fileReceiver.onProgress = updateReceiveProgress;
+        fileReceiver.onComplete = (info) => {
+          onReceiveComplete(info);
+          // Return to hotspot connected view after completion
+          sendAnotherBtn.onclick = () => {
+            showView('hotspot');
+            showHotspotSubview('connected');
+          };
+        };
+        showTransferUI('Receiving...', 0, 'Receiving');
+      }
+      fileReceiver.handleData(e.data);
+      // Update filename/size from metadata once available
+      if (fileReceiver.meta) {
+        transferFileName.textContent = fileReceiver.meta.name;
+        transferFileSize.textContent = formatBytes(fileReceiver.meta.size);
+      }
+    };
+  }
+
+  // Hotspot file sending
+  function hotspotSendFile(file) {
+    if (!hotspot || !hotspot.getDataChannel()) return;
+
+    const ch = hotspot.getDataChannel();
+    // Create a minimal PeerConnection-like wrapper for FileSender
+    const wrapper = { dataChannel: ch };
+    fileSender = new FileSender(wrapper, file);
+    fileSender.onProgress = updateSendProgress;
+    fileSender.onComplete = () => {
+      onSendComplete();
+      sendAnotherBtn.onclick = () => {
+        showView('hotspot');
+        showHotspotSubview('connected');
+      };
+    };
+    showTransferUI(file.name, file.size, 'Sending');
+    fileSender.start();
+  }
+
+  hotspotBrowseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hotspotFileInput.click();
+  });
+
+  hotspotDropZone.addEventListener('click', () => {
+    hotspotFileInput.click();
+  });
+
+  hotspotFileInput.addEventListener('change', () => {
+    if (hotspotFileInput.files.length > 0) {
+      hotspotSendFile(hotspotFileInput.files[0]);
+    }
+    hotspotFileInput.value = '';
+  });
+
+  hotspotDropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    hotspotDropZone.classList.add('drag-over');
+  });
+
+  hotspotDropZone.addEventListener('dragleave', () => {
+    hotspotDropZone.classList.remove('drag-over');
+  });
+
+  hotspotDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    hotspotDropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length > 0) {
+      hotspotSendFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  // Back buttons
+  qrBackBtn.addEventListener('click', () => {
+    if (hotspot) { hotspot.close(); hotspot = null; }
+    showHotspotSubview('actions');
+  });
+
+  scanBackBtn.addEventListener('click', () => {
+    if (hotspot) { hotspot.close(); hotspot = null; }
+    showHotspotSubview('actions');
+  });
 
 })();

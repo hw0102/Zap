@@ -8,7 +8,9 @@
   <meta name="theme-color" content="#0a0a1a">
   <title>LanDrop</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+  <link rel="apple-touch-icon" href="icon-192.svg">
 </head>
 <body>
   <div id="app">
@@ -123,6 +125,99 @@
       </section>
     </main>
 
+      <!-- Hotspot mode (offline fallback) -->
+      <section id="hotspotView" class="view">
+        <div class="hotspot-banner">
+          <div class="hotspot-banner-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+              <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+              <line x1="12" y1="20" x2="12.01" y2="20"/>
+            </svg>
+          </div>
+          <h2>Hotspot Mode</h2>
+          <p>Server unreachable. Connect directly via QR code — no server needed.</p>
+        </div>
+
+        <div class="hotspot-actions" id="hotspotActions">
+          <button class="hotspot-btn" id="createSessionBtn">
+            <div class="hotspot-btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <rect x="7" y="7" width="3" height="3"/>
+                <rect x="14" y="7" width="3" height="3"/>
+                <rect x="7" y="14" width="3" height="3"/>
+                <rect x="14" y="14" width="3" height="3"/>
+              </svg>
+            </div>
+            <span>Create Session</span>
+            <small>Show QR code for the other device to scan</small>
+          </button>
+          <button class="hotspot-btn" id="joinSessionBtn">
+            <div class="hotspot-btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+            </div>
+            <span>Join Session</span>
+            <small>Scan the other device's QR code</small>
+          </button>
+        </div>
+
+        <!-- QR display (creator shows offer, then scans answer) -->
+        <div class="qr-container" id="qrDisplay" hidden>
+          <h3 id="qrTitle">Scan this QR code</h3>
+          <p id="qrSubtitle" class="qr-subtitle">The other device should scan this code to connect</p>
+          <div class="qr-canvas-wrap">
+            <canvas id="qrCanvas"></canvas>
+          </div>
+          <button class="btn btn-cancel" id="qrBackBtn">Back</button>
+        </div>
+
+        <!-- QR scanner (joiner scans offer, creator scans answer) -->
+        <div class="qr-container" id="qrScanner" hidden>
+          <h3 id="scanTitle">Scan QR Code</h3>
+          <p id="scanSubtitle" class="qr-subtitle">Point your camera at the QR code on the other device</p>
+          <div class="scanner-wrap">
+            <video id="scannerVideo" autoplay playsinline></video>
+            <div class="scanner-overlay">
+              <div class="scanner-frame"></div>
+            </div>
+            <canvas id="scannerCanvas" hidden></canvas>
+          </div>
+          <button class="btn btn-cancel" id="scanBackBtn">Back</button>
+        </div>
+
+        <!-- Direct connection established -->
+        <div class="hotspot-connected" id="hotspotConnected" hidden>
+          <div class="success-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </div>
+          <h3>Direct Connection Established</h3>
+          <p class="hotspot-connected-hint">No server needed</p>
+          <div class="drop-zone" id="hotspotDropZone">
+            <div class="drop-zone-content">
+              <div class="drop-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+              </div>
+              <p class="drop-label">Drop files here or <button class="browse-btn" id="hotspotBrowseBtn">browse</button></p>
+            </div>
+          </div>
+          <input type="file" id="hotspotFileInput" hidden multiple>
+        </div>
+      </section>
+
+    </main>
+
     <!-- Incoming file request modal -->
     <div class="modal-overlay" id="incomingModal" hidden>
       <div class="modal">
@@ -159,9 +254,16 @@
     </div>
   </div>
 
+  <script src="qr.js"></script>
   <script src="signaling.js"></script>
   <script src="webrtc.js"></script>
   <script src="transfer.js"></script>
+  <script src="hotspot.js"></script>
   <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
 </body>
 </html>
