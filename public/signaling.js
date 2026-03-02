@@ -7,6 +7,7 @@ class SignalingClient {
   constructor() {
     this.ws = null;
     this.myId = null;
+    this.authToken = '';
     this.reconnectDelay = 1000;
     this.maxReconnectDelay = 8000;
     this.handlers = {};
@@ -20,12 +21,14 @@ class SignalingClient {
     for (const fn of this.handlers[event] || []) fn(data);
   }
 
-  connect(deviceName, deviceType) {
+  connect(deviceName, deviceType, authToken = '') {
     this.deviceName = deviceName;
     this.deviceType = deviceType;
+    this.authToken = typeof authToken === 'string' ? authToken : '';
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}`;
+    const wsPath = this.authToken ? `/?token=${encodeURIComponent(this.authToken)}` : '/';
+    const url = `${proto}//${location.host}${wsPath}`;
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
@@ -84,7 +87,7 @@ class SignalingClient {
   scheduleReconnect() {
     setTimeout(() => {
       this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, this.maxReconnectDelay);
-      this.connect(this.deviceName, this.deviceType);
+      this.connect(this.deviceName, this.deviceType, this.authToken);
     }, this.reconnectDelay);
   }
 }

@@ -134,8 +134,9 @@
   const signaling = new SignalingClient();
   const myDeviceType = detectDeviceType();
   let myDeviceName = getDefaultDeviceName();
+  const authToken = new URLSearchParams(location.search).get('token') || '';
 
-  signaling.connect(myDeviceName, myDeviceType);
+  signaling.connect(myDeviceName, myDeviceType, authToken);
 
   signaling.on('registered', ({ id }) => {
     deviceNameEl.textContent = myDeviceName;
@@ -239,6 +240,7 @@
   signaling.on('transfer-cancel', () => {
     if (fileSender) fileSender.cancel();
     fileSender = null;
+    if (fileReceiver) fileReceiver.dispose();
     fileReceiver = null;
     pendingIncomingData = [];
     if (peerConnection) peerConnection.close();
@@ -303,7 +305,10 @@
     const unique = [...new Set((urls || []).filter(Boolean))];
     const host = location.hostname;
     const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-    const fallback = isLocalhost ? [] : [location.origin];
+    const localShareUrl = authToken
+      ? `${location.origin}/?token=${encodeURIComponent(authToken)}`
+      : location.origin;
+    const fallback = isLocalhost ? [] : [localShareUrl];
     shareUrls = unique.length > 0 ? unique : fallback;
 
     if (shareUrls.length === 0) {
@@ -335,12 +340,18 @@
     if (!shareUrlValue) return;
 
     try {
-      const resp = await fetch('/api/local-urls', { cache: 'no-store' });
+      const endpoint = authToken
+        ? `/api/local-urls?token=${encodeURIComponent(authToken)}`
+        : '/api/local-urls';
+      const resp = await fetch(endpoint, { cache: 'no-store' });
       if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
       const body = await resp.json();
       renderShareUrls(Array.isArray(body.urls) ? body.urls : []);
     } catch {
-      renderShareUrls([location.origin]);
+      const localShareUrl = authToken
+        ? `${location.origin}/?token=${encodeURIComponent(authToken)}`
+        : location.origin;
+      renderShareUrls([localShareUrl]);
     }
   }
 
@@ -372,7 +383,10 @@
 
   if (shareUrlCopyBtn) {
     shareUrlCopyBtn.addEventListener('click', async () => {
-      const text = (shareUrls[0] || location.origin).trim();
+      const localShareUrl = authToken
+        ? `${location.origin}/?token=${encodeURIComponent(authToken)}`
+        : location.origin;
+      const text = (shareUrls[0] || localShareUrl).trim();
 
       try {
         await navigator.clipboard.writeText(text);
@@ -496,6 +510,7 @@
     fileReceiver = new FileReceiver();
     fileReceiver.onProgress = updateReceiveProgress;
     fileReceiver.onComplete = onReceiveComplete;
+    fileReceiver.onError = onReceiveError;
     flushPendingIncomingData();
 
     showTransferUI(pendingRequest.meta.name, pendingRequest.meta.size, 'Receiving');
@@ -531,7 +546,7 @@
     fileSender = new FileSender(peerConnection, pendingFile);
     fileSender.onProgress = updateSendProgress;
     fileSender.onComplete = onSendComplete;
-    fileSender.onError = (err) => console.error('Send error:', err);
+    fileSender.onError = onSendError;
     fileSender.start();
     pendingFile = null;
   }
@@ -566,8 +581,33 @@
     cleanupTransfer();
   }
 
+  function returnToReadyView() {
+    const hotspotChannel = hotspot && hotspot.getDataChannel ? hotspot.getDataChannel() : null;
+    if (hotspotChannel && hotspotChannel.readyState === 'open') {
+      showView('hotspot');
+      showHotspotSubview('connected');
+      return;
+    }
+    showView('peers');
+  }
+
+  function onSendError(err) {
+    console.error('Send error:', err);
+    cleanupTransfer();
+    returnToReadyView();
+    alert('Transfer failed while sending. Please try again.');
+  }
+
+  function onReceiveError(err) {
+    console.error('Receive error:', err);
+    cleanupTransfer();
+    returnToReadyView();
+    alert('Transfer failed while receiving. Please ask the sender to retry.');
+  }
+
   function cleanupTransfer() {
     fileSender = null;
+    if (fileReceiver) fileReceiver.dispose();
     fileReceiver = null;
     pendingIncomingData = [];
     // Delay closing the peer connection so the final file-complete message
@@ -589,6 +629,7 @@
       peerConnection = null;
     }
     fileSender = null;
+    if (fileReceiver) fileReceiver.dispose();
     fileReceiver = null;
     pendingIncomingData = [];
     pendingFile = null;
@@ -679,6 +720,7 @@
         // Auto-create receiver on first data
         fileReceiver = new FileReceiver();
         fileReceiver.onProgress = updateReceiveProgress;
+        fileReceiver.onError = onReceiveError;
         fileReceiver.onComplete = (info) => {
           onReceiveComplete(info);
           // Return to hotspot connected view after completion
