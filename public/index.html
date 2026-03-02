@@ -105,6 +105,29 @@
               >
               <button class="chat-send-btn" id="chatSendBtn" type="submit">Send</button>
             </form>
+
+            <div class="clipboard-section" aria-label="Shared clipboard">
+              <div class="clipboard-header">
+                <h4>Shared Clipboard</h4>
+                <p>Create snippets anyone in this session can copy.</p>
+              </div>
+              <div
+                class="clipboard-list"
+                id="clipboardList"
+                role="log"
+                aria-live="polite"
+                aria-label="Clipboard snippets"
+              ></div>
+              <form class="clipboard-form" id="clipboardForm">
+                <textarea
+                  id="clipboardInput"
+                  class="clipboard-input"
+                  maxlength="800"
+                  placeholder="Add snippet text for quick copy/paste…"
+                ></textarea>
+                <button class="clipboard-add-btn" id="clipboardAddBtn" type="submit">Add Snippet</button>
+              </form>
+            </div>
           </aside>
           </div>
       </section>

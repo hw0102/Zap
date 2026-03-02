@@ -24,6 +24,8 @@ const MAX_TRANSFER_BYTES = parsePositiveInt(process.env.ZAP_MAX_TRANSFER_BYTES, 
 const MAX_SDP_LENGTH = parsePositiveInt(process.env.ZAP_MAX_SDP_LENGTH, 64 * 1024);
 const MAX_ICE_CANDIDATE_LENGTH = parsePositiveInt(process.env.ZAP_MAX_ICE_CANDIDATE_LENGTH, 8192);
 const MAX_CHAT_MESSAGE_LENGTH = parsePositiveInt(process.env.ZAP_MAX_CHAT_MESSAGE_LENGTH, 400);
+const MAX_CLIPBOARD_SNIPPET_LENGTH = parsePositiveInt(process.env.ZAP_MAX_CLIPBOARD_SNIPPET_LENGTH, 800);
+const MAX_CLIPBOARD_ITEMS = parsePositiveInt(process.env.ZAP_MAX_CLIPBOARD_ITEMS, 200);
 const MAX_MIME_TYPE_LENGTH = 128;
 const RELAY_TYPES = new Set([
   'offer',
@@ -201,6 +203,8 @@ const wss = new WebSocketServer({
 });
 wss.on('error', failStartup);
 const peers = new Map(); // peerId -> { ws, name, deviceType }
+const clipboardSnippets = [];
+let nextClipboardId = 1;
 let nextId = 1;
 
 function safeSend(ws, payload) {
@@ -332,6 +336,13 @@ function sanitizeChatText(value) {
   return trimmed;
 }
 
+function sanitizeClipboardText(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_CLIPBOARD_SNIPPET_LENGTH) return null;
+  return trimmed;
+}
+
 server.on('upgrade', (req, socket, head) => {
   const host = normalizeHost(req.headers.host);
 
@@ -413,6 +424,7 @@ wss.on('connection', (ws) => {
           registered = true;
           safeSend(ws, JSON.stringify({ type: 'registered', id: peerId }));
         }
+        safeSend(ws, JSON.stringify({ type: 'clipboard-state', snippets: clipboardSnippets }));
         broadcastPeerList();
         break;
       }
@@ -431,6 +443,42 @@ wss.on('connection', (ws) => {
           name: sender.name,
           text,
           ts: Date.now(),
+        });
+
+        const stale = [];
+        for (const [id, peer] of peers) {
+          if (!safeSend(peer.ws, payload)) stale.push(id);
+        }
+        for (const id of stale) {
+          peers.delete(id);
+        }
+        break;
+      }
+
+      case 'clipboard-add': {
+        if (!registered) break;
+        const text = sanitizeClipboardText(msg.text);
+        if (!text) break;
+
+        const sender = peers.get(peerId);
+        if (!sender) break;
+
+        const snippet = {
+          id: String(nextClipboardId++),
+          from: peerId,
+          name: sender.name,
+          text,
+          ts: Date.now(),
+        };
+
+        clipboardSnippets.push(snippet);
+        if (clipboardSnippets.length > MAX_CLIPBOARD_ITEMS) {
+          clipboardSnippets.splice(0, clipboardSnippets.length - MAX_CLIPBOARD_ITEMS);
+        }
+
+        const payload = JSON.stringify({
+          type: 'clipboard-add',
+          snippet,
         });
 
         const stale = [];

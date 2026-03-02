@@ -318,3 +318,51 @@ test('chat messages broadcast to all registered peers', async (t) => {
   assert.equal(typeof receivedByA.ts, 'number');
   assert.equal(typeof receivedByB.ts, 'number');
 });
+
+test('clipboard snippets broadcast and sync to new peers', async (t) => {
+  const { port } = await startServer(t);
+  const origin = `http://127.0.0.1:${port}`;
+
+  const wsA = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+  const wsB = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+
+  t.after(() => {
+    if (wsA.readyState === WebSocket.OPEN) wsA.close();
+    if (wsB.readyState === WebSocket.OPEN) wsB.close();
+  });
+
+  const wsARegistered = waitForMessageType(wsA, 'registered');
+  const wsAClipboardState = waitForMessageType(wsA, 'clipboard-state');
+  const wsBRegistered = waitForMessageType(wsB, 'registered');
+  const wsBClipboardState = waitForMessageType(wsB, 'clipboard-state');
+  wsA.send(JSON.stringify({ type: 'register', name: 'alpha', deviceType: 'desktop' }));
+  wsB.send(JSON.stringify({ type: 'register', name: 'bravo', deviceType: 'desktop' }));
+  await wsARegistered;
+  await wsAClipboardState;
+  await wsBRegistered;
+  await wsBClipboardState;
+
+  wsA.send(JSON.stringify({ type: 'clipboard-add', text: 'const LAN = true;' }));
+
+  const addA = await waitForMessageType(wsA, 'clipboard-add');
+  const addB = await waitForMessageType(wsB, 'clipboard-add');
+
+  assert.equal(addA.snippet.text, 'const LAN = true;');
+  assert.equal(addB.snippet.text, 'const LAN = true;');
+  assert.equal(addA.snippet.name, 'alpha');
+  assert.equal(addB.snippet.name, 'alpha');
+  assert.equal(typeof addA.snippet.id, 'string');
+  assert.equal(typeof addB.snippet.id, 'string');
+
+  const wsC = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+  t.after(() => {
+    if (wsC.readyState === WebSocket.OPEN) wsC.close();
+  });
+  const wsCRegistered = waitForMessageType(wsC, 'registered');
+  const wsCClipboardState = waitForMessageType(wsC, 'clipboard-state');
+  wsC.send(JSON.stringify({ type: 'register', name: 'charlie', deviceType: 'desktop' }));
+  await wsCRegistered;
+  const stateC = await wsCClipboardState;
+  assert.ok(Array.isArray(stateC.snippets));
+  assert.ok(stateC.snippets.some((snippet) => snippet.text === 'const LAN = true;'));
+});

@@ -98,6 +98,10 @@
   const chatForm = $('#chatForm');
   const chatInput = $('#chatInput');
   const chatSendBtn = $('#chatSendBtn');
+  const clipboardListEl = $('#clipboardList');
+  const clipboardForm = $('#clipboardForm');
+  const clipboardInput = $('#clipboardInput');
+  const clipboardAddBtn = $('#clipboardAddBtn');
 
   // Hotspot mode DOM refs
   const hotspotView = $('#hotspotView');
@@ -133,6 +137,7 @@
   let isOffline = false;
   let shareUrls = [];
   const MAX_CHAT_ITEMS = 120;
+  const MAX_CLIPBOARD_ITEMS = 120;
 
   // ---- Signaling ----
 
@@ -147,6 +152,7 @@
     isOffline = false;
     deviceNameEl.textContent = myDeviceName;
     if (chatSendBtn) chatSendBtn.disabled = false;
+    if (clipboardAddBtn) clipboardAddBtn.disabled = false;
   });
 
   signaling.on('peers', (peers) => {
@@ -158,6 +164,7 @@
   signaling.on('disconnected', () => {
     deviceNameEl.textContent = 'Reconnecting...';
     if (chatSendBtn) chatSendBtn.disabled = true;
+    if (clipboardAddBtn) clipboardAddBtn.disabled = true;
     // After a delay, if still not connected, offer hotspot mode
     setTimeout(() => {
       if (!signaling.myId || (signaling.ws && signaling.ws.readyState !== WebSocket.OPEN)) {
@@ -170,6 +177,14 @@
 
   signaling.on('chat-message', (msg) => {
     appendChatMessage(msg);
+  });
+
+  signaling.on('clipboard-state', (msg) => {
+    replaceClipboardSnippets(msg.snippets);
+  });
+
+  signaling.on('clipboard-add', (msg) => {
+    appendClipboardSnippet(msg.snippet);
   });
 
   // ---- Incoming signaling (callee side) ----
@@ -432,6 +447,101 @@
     chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
   }
 
+  function renderClipboardEmptyState() {
+    if (!clipboardListEl || clipboardListEl.children.length > 0) return;
+    const empty = document.createElement('p');
+    empty.className = 'clipboard-empty';
+    empty.textContent = 'No snippets yet. Add text for everyone to copy quickly.';
+    clipboardListEl.appendChild(empty);
+  }
+
+  function sanitizeSnippetForView(snippet) {
+    if (!snippet || typeof snippet !== 'object') return null;
+    if (typeof snippet.id !== 'string' || snippet.id.length > 64) return null;
+    if (typeof snippet.text !== 'string') return null;
+    const text = snippet.text.trim();
+    if (!text || text.length > 800) return null;
+
+    const name = typeof snippet.name === 'string' && snippet.name.trim()
+      ? snippet.name.trim().slice(0, 50)
+      : 'Unknown device';
+    const ts = Number.isFinite(Number(snippet.ts)) ? Number(snippet.ts) : Date.now();
+
+    return {
+      id: snippet.id,
+      text,
+      name,
+      ts,
+    };
+  }
+
+  function createClipboardItemElement(snippet) {
+    const item = document.createElement('article');
+    item.className = 'clipboard-item';
+    item.dataset.snippetId = snippet.id;
+
+    const header = document.createElement('div');
+    header.className = 'clipboard-item-header';
+
+    const author = document.createElement('span');
+    author.className = 'clipboard-author';
+    author.textContent = snippet.name;
+
+    const time = document.createElement('span');
+    time.className = 'clipboard-time';
+    time.textContent = formatChatTime(snippet.ts);
+
+    const text = document.createElement('p');
+    text.className = 'clipboard-text';
+    text.textContent = snippet.text;
+
+    const actions = document.createElement('div');
+    actions.className = 'clipboard-actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'clipboard-copy-btn';
+    copyBtn.type = 'button';
+    copyBtn.textContent = 'Copy';
+    copyBtn.dataset.copySnippet = snippet.id;
+    copyBtn.setAttribute('aria-label', 'Copy snippet text');
+
+    actions.appendChild(copyBtn);
+    header.appendChild(author);
+    header.appendChild(time);
+    item.appendChild(header);
+    item.appendChild(text);
+    item.appendChild(actions);
+    return item;
+  }
+
+  function appendClipboardSnippet(rawSnippet) {
+    if (!clipboardListEl) return;
+    const snippet = sanitizeSnippetForView(rawSnippet);
+    if (!snippet) return;
+    if (clipboardListEl.querySelector(`[data-snippet-id="${snippet.id}"]`)) return;
+
+    const empty = clipboardListEl.querySelector('.clipboard-empty');
+    if (empty) empty.remove();
+
+    clipboardListEl.appendChild(createClipboardItemElement(snippet));
+    while (clipboardListEl.children.length > MAX_CLIPBOARD_ITEMS) {
+      clipboardListEl.removeChild(clipboardListEl.firstElementChild);
+    }
+    clipboardListEl.scrollTop = clipboardListEl.scrollHeight;
+  }
+
+  function replaceClipboardSnippets(rawSnippets) {
+    if (!clipboardListEl) return;
+    clipboardListEl.innerHTML = '';
+    const snippets = Array.isArray(rawSnippets) ? rawSnippets : [];
+    for (const raw of snippets) {
+      const snippet = sanitizeSnippetForView(raw);
+      if (!snippet) continue;
+      clipboardListEl.appendChild(createClipboardItemElement(snippet));
+    }
+    renderClipboardEmptyState();
+  }
+
   // ---- Render peers ----
 
   function renderPeers() {
@@ -497,6 +607,49 @@
       });
       chatInput.value = '';
       chatInput.focus();
+    });
+  }
+
+  if (clipboardForm && clipboardInput && clipboardListEl) {
+    renderClipboardEmptyState();
+    if (clipboardAddBtn) clipboardAddBtn.disabled = true;
+
+    clipboardForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = clipboardInput.value.trim();
+      if (!text) return;
+      if (text.length > 800) {
+        alert('Clipboard snippets are limited to 800 characters.');
+        return;
+      }
+
+      signaling.send({
+        type: 'clipboard-add',
+        text,
+      });
+
+      clipboardInput.value = '';
+      clipboardInput.focus();
+    });
+
+    clipboardListEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-copy-snippet]');
+      if (!btn) return;
+      const item = btn.closest('.clipboard-item');
+      const textEl = item ? item.querySelector('.clipboard-text') : null;
+      const text = textEl ? textEl.textContent : '';
+      if (!text) return;
+
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(() => {
+          btn.textContent = original;
+        }, 1000);
+      } catch {
+        window.prompt('Copy this snippet:', text);
+      }
     });
   }
 
