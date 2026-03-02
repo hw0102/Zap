@@ -1,8 +1,14 @@
 # Zap
 
-Peer-to-peer LAN file sharing in the browser using WebRTC.
+Peer-to-peer local network file transfer in the browser using WebRTC.
 
-Zap is a self-hosted web app for quickly sending files between devices on the same local network. The server handles discovery and signaling only; file data goes directly between browsers.
+Zap is a local-first web app for quickly sending files between devices on the same LAN/hotspot. The server is only for peer discovery and signaling; file data is transferred directly between browsers.
+
+## Project Direction (Local Only)
+
+- Zap is intended to run on a local machine and local network.
+- It is not intended to be deployed as a public internet website.
+- Keep contributions aligned with local/private usage and wireless transfer between nearby devices.
 
 ## Features
 
@@ -12,7 +18,7 @@ Zap is a self-hosted web app for quickly sending files between devices on the sa
 - Receiver accept/decline confirmation before transfer starts
 - Real-time progress, transfer speed, and ETA
 - PWA support via service worker + manifest
-- Hotspot fallback mode with QR-based SDP exchange when server signaling is unavailable
+- Hotspot fallback mode with QR-based SDP exchange when signaling is unavailable
 
 ## Tech Stack
 
@@ -21,29 +27,9 @@ Zap is a self-hosted web app for quickly sending files between devices on the sa
 - Vanilla HTML/CSS/JS frontend
 - WebRTC (`RTCPeerConnection` + `RTCDataChannel`)
 
-## Project Structure
-
-```text
-.
-├── server.js
-├── package.json
-├── certs/                 # Optional TLS certs (not committed)
-└── public/
-    ├── index.html
-    ├── style.css
-    ├── app.js
-    ├── signaling.js
-    ├── webrtc.js
-    ├── transfer.js
-    ├── hotspot.js
-    ├── qr.js
-    ├── sw.js
-    └── manifest.json
-```
-
 ## Requirements
 
-- Node.js 18+ (recommended)
+- Node.js 18+
 - npm
 - Modern browsers with WebRTC support
 
@@ -53,21 +39,21 @@ Zap is a self-hosted web app for quickly sending files between devices on the sa
 npm install
 ```
 
-## Run
+## Run Locally
 
-Development mode (HTTP):
+For same-machine development:
 
 ```bash
 npm run dev
 ```
 
-Development mode on local network (HTTP):
+For local-network sharing (other devices on your Wi-Fi/hotspot):
 
 ```bash
 npm run dev:lan
 ```
 
-Then open Zap from another device on the same network at:
+Then open Zap from another device on the same network:
 
 ```text
 http://<host-machine-lan-ip>:3000
@@ -79,7 +65,7 @@ Default mode:
 npm start
 ```
 
-By default Zap listens on port `3000`. Set a custom port with:
+By default Zap listens on port `3000`. To use a custom port:
 
 ```bash
 PORT=8080 npm start
@@ -96,9 +82,9 @@ Behavior:
 
 - If both files exist and you run `npm start`, Zap starts with HTTPS.
 - Otherwise it falls back to HTTP.
-- `npm run dev` always uses HTTP.
+- `npm run dev` and `npm run dev:lan` use HTTP.
 
-Note: iOS Safari generally requires HTTPS for full WebRTC support.
+Note: iOS Safari generally requires HTTPS for reliable WebRTC support.
 
 ## Usage
 
@@ -119,13 +105,6 @@ If signaling server connection fails, the app can switch to Hotspot Mode:
 3. Creator scans answer QR.
 4. Data channel connects directly and transfer proceeds.
 
-## Current Limitations
-
-- One active peer connection at a time
-- UI currently sends one selected file per transfer action
-- No transfer history or authentication
-- LAN-focused design (not intended for public internet transfer)
-
 ## Security and Privacy Notes
 
 - File payloads are not stored by the server.
@@ -136,4 +115,19 @@ If signaling server connection fails, the app can switch to Hotspot Mode:
 ## Scripts
 
 - `npm start`: Run server (uses HTTPS if certs are present)
-- `npm run dev`: Run server in development mode (HTTP)
+- `npm run dev`: Run local dev server bound to loopback (`127.0.0.1`)
+- `npm run dev:lan`: Run dev server bound to all interfaces (`0.0.0.0`)
+- `npm run check:syntax`: Syntax-check backend and frontend JS files
+- `npm test`: Run smoke tests
+- `npm run check`: Run all regression checks (`check:syntax` + `test`)
+
+## CI for PR Merges
+
+GitHub Actions runs `.github/workflows/ci.yml` on:
+
+- Pull requests targeting `main`
+- Direct pushes to `main`
+
+The workflow installs dependencies and runs `npm run check` on Node 18 and Node 20.
+
+For merge protection, set branch protection on `main` and require the CI status checks to pass before merging.

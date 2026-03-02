@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js --dev",
-    "dev:lan": "HOST=0.0.0.0 node server.js --dev"
+    "dev:lan": "HOST=0.0.0.0 node server.js --dev",
+    "check:syntax": "node --check server.js public/*.js",
+    "test": "node --test tests/server.smoke.test.mjs",
+    "check": "npm run check:syntax && npm run test"
   },
   "dependencies": {
     "express": "^4.21.0",

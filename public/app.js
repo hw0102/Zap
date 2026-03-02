@@ -554,6 +554,7 @@
     transferCard.hidden = true;
     transferComplete.hidden = false;
     completeMessage.textContent = 'File sent successfully!';
+    sendAnotherBtn.textContent = 'Send Another';
     cleanupTransfer();
   }
 
@@ -561,6 +562,7 @@
     transferCard.hidden = true;
     transferComplete.hidden = false;
     completeMessage.textContent = `${name} (${formatBytes(size)}) saved.`;
+    sendAnotherBtn.textContent = 'Done';
     cleanupTransfer();
   }
 
