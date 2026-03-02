@@ -26,6 +26,7 @@ const MAX_ICE_CANDIDATE_LENGTH = parsePositiveInt(process.env.ZAP_MAX_ICE_CANDID
 const MAX_CHAT_MESSAGE_LENGTH = parsePositiveInt(process.env.ZAP_MAX_CHAT_MESSAGE_LENGTH, 400);
 const MAX_CLIPBOARD_SNIPPET_LENGTH = parsePositiveInt(process.env.ZAP_MAX_CLIPBOARD_SNIPPET_LENGTH, 800);
 const MAX_CLIPBOARD_ITEMS = parsePositiveInt(process.env.ZAP_MAX_CLIPBOARD_ITEMS, 200);
+const MAX_TRACKED_CHAT_MESSAGES = parsePositiveInt(process.env.ZAP_MAX_TRACKED_CHAT_MESSAGES, 500);
 const MAX_MIME_TYPE_LENGTH = 128;
 const RELAY_TYPES = new Set([
   'offer',
@@ -204,6 +205,9 @@ const wss = new WebSocketServer({
 wss.on('error', failStartup);
 const peers = new Map(); // peerId -> { ws, name, deviceType }
 const clipboardSnippets = [];
+const chatMessageOwners = new Map(); // messageId -> peerId
+const chatMessageOrder = [];
+let nextChatId = 1;
 let nextClipboardId = 1;
 let nextId = 1;
 
@@ -343,6 +347,13 @@ function sanitizeClipboardText(value) {
   return trimmed;
 }
 
+function sanitizeItemId(value) {
+  if (typeof value !== 'string') return null;
+  const id = value.trim();
+  if (!id || id.length > 64) return null;
+  return id;
+}
+
 server.on('upgrade', (req, socket, head) => {
   const host = normalizeHost(req.headers.host);
 
@@ -436,9 +447,17 @@ wss.on('connection', (ws) => {
 
         const sender = peers.get(peerId);
         if (!sender) break;
+        const id = String(nextChatId++);
+        chatMessageOwners.set(id, peerId);
+        chatMessageOrder.push(id);
+        if (chatMessageOrder.length > MAX_TRACKED_CHAT_MESSAGES) {
+          const removed = chatMessageOrder.shift();
+          if (removed) chatMessageOwners.delete(removed);
+        }
 
         const payload = JSON.stringify({
           type: 'chat-message',
+          id,
           from: peerId,
           name: sender.name,
           text,
@@ -451,6 +470,32 @@ wss.on('connection', (ws) => {
         }
         for (const id of stale) {
           peers.delete(id);
+        }
+        break;
+      }
+
+      case 'chat-delete': {
+        if (!registered) break;
+        const id = sanitizeItemId(msg.id);
+        if (!id) break;
+        const owner = chatMessageOwners.get(id);
+        if (owner !== peerId) break;
+
+        chatMessageOwners.delete(id);
+        const idx = chatMessageOrder.indexOf(id);
+        if (idx >= 0) chatMessageOrder.splice(idx, 1);
+
+        const payload = JSON.stringify({
+          type: 'chat-delete',
+          id,
+        });
+
+        const stale = [];
+        for (const [targetId, peer] of peers) {
+          if (!safeSend(peer.ws, payload)) stale.push(targetId);
+        }
+        for (const targetId of stale) {
+          peers.delete(targetId);
         }
         break;
       }
@@ -487,6 +532,29 @@ wss.on('connection', (ws) => {
         }
         for (const id of stale) {
           peers.delete(id);
+        }
+        break;
+      }
+
+      case 'clipboard-delete': {
+        if (!registered) break;
+        const id = sanitizeItemId(msg.id);
+        if (!id) break;
+        const index = clipboardSnippets.findIndex((snippet) => snippet.id === id);
+        if (index < 0) break;
+        clipboardSnippets.splice(index, 1);
+
+        const payload = JSON.stringify({
+          type: 'clipboard-delete',
+          id,
+        });
+
+        const stale = [];
+        for (const [targetId, peer] of peers) {
+          if (!safeSend(peer.ws, payload)) stale.push(targetId);
+        }
+        for (const targetId of stale) {
+          peers.delete(targetId);
         }
         break;
       }

@@ -568,6 +568,31 @@ body {
   overflow-wrap: anywhere;
 }
 
+.chat-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-delete-btn {
+  all: unset;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  padding: 4px 8px;
+  transition: transform var(--transition), background var(--transition), color var(--transition);
+}
+
+.chat-delete-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(239, 68, 68, 0.3);
+  color: #fee2e2;
+}
+
 .chat-form {
   display: flex;
   gap: 8px;
@@ -707,6 +732,7 @@ body {
 .clipboard-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
 }
 
 .clipboard-copy-btn {
@@ -724,6 +750,26 @@ body {
 
 .clipboard-copy-btn:hover {
   transform: translateY(-1px);
+}
+
+.clipboard-delete-btn {
+  all: unset;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  padding: 5px 9px;
+  transition: transform var(--transition), background var(--transition), color var(--transition);
+}
+
+.clipboard-delete-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(239, 68, 68, 0.3);
+  color: #fee2e2;
 }
 
 .clipboard-form {

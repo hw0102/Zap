@@ -74,8 +74,10 @@ class SignalingClient {
       case 'file-decline':
       case 'transfer-cancel':
       case 'chat-message':
+      case 'chat-delete':
       case 'clipboard-state':
       case 'clipboard-add':
+      case 'clipboard-delete':
         this.emit(msg.type, msg);
         break;
     }

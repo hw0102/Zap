@@ -179,12 +179,20 @@
     appendChatMessage(msg);
   });
 
+  signaling.on('chat-delete', (msg) => {
+    removeChatMessage(msg.id);
+  });
+
   signaling.on('clipboard-state', (msg) => {
     replaceClipboardSnippets(msg.snippets);
   });
 
   signaling.on('clipboard-add', (msg) => {
     appendClipboardSnippet(msg.snippet);
+  });
+
+  signaling.on('clipboard-delete', (msg) => {
+    removeClipboardSnippet(msg.id);
   });
 
   // ---- Incoming signaling (callee side) ----
@@ -405,16 +413,38 @@
     return peer ? peer.name : 'Unknown device';
   }
 
+  function sanitizeListItemId(value) {
+    if (typeof value !== 'string') return null;
+    const id = value.trim();
+    if (!id || id.length > 64) return null;
+    return id;
+  }
+
+  function findChatMessageElementById(id) {
+    if (!chatMessagesEl) return null;
+    for (const child of chatMessagesEl.children) {
+      if (child.classList && child.classList.contains('chat-message') && child.dataset.chatId === id) {
+        return child;
+      }
+    }
+    return null;
+  }
+
   function appendChatMessage(msg) {
     if (!chatMessagesEl || !msg || typeof msg.text !== 'string') return;
     const text = msg.text.trim();
     if (!text) return;
+    const messageId = sanitizeListItemId(msg.id);
+    if (messageId && findChatMessageElementById(messageId)) return;
 
     const empty = chatMessagesEl.querySelector('.chat-empty');
     if (empty) empty.remove();
 
     const messageEl = document.createElement('article');
     messageEl.className = 'chat-message';
+    if (messageId) {
+      messageEl.dataset.chatId = messageId;
+    }
     if (msg.from === signaling.myId) {
       messageEl.classList.add('self');
     }
@@ -438,6 +468,22 @@
     metaEl.appendChild(timeEl);
     messageEl.appendChild(metaEl);
     messageEl.appendChild(textEl);
+
+    if (messageId && msg.from === signaling.myId) {
+      const actionsEl = document.createElement('div');
+      actionsEl.className = 'chat-actions';
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'chat-delete-btn';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.dataset.deleteChat = messageId;
+      deleteBtn.setAttribute('aria-label', 'Delete this message');
+
+      actionsEl.appendChild(deleteBtn);
+      messageEl.appendChild(actionsEl);
+    }
+
     chatMessagesEl.appendChild(messageEl);
 
     while (chatMessagesEl.children.length > MAX_CHAT_ITEMS) {
@@ -445,6 +491,16 @@
     }
 
     chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  }
+
+  function removeChatMessage(rawId) {
+    if (!chatMessagesEl) return;
+    const id = sanitizeListItemId(rawId);
+    if (!id) return;
+    const messageEl = findChatMessageElementById(id);
+    if (!messageEl) return;
+    messageEl.remove();
+    renderChatEmptyState();
   }
 
   function renderClipboardEmptyState() {
@@ -505,7 +561,15 @@
     copyBtn.dataset.copySnippet = snippet.id;
     copyBtn.setAttribute('aria-label', 'Copy snippet text');
 
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'clipboard-delete-btn';
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.dataset.deleteSnippet = snippet.id;
+    deleteBtn.setAttribute('aria-label', 'Delete snippet');
+
     actions.appendChild(copyBtn);
+    actions.appendChild(deleteBtn);
     header.appendChild(author);
     header.appendChild(time);
     item.appendChild(header);
@@ -514,11 +578,21 @@
     return item;
   }
 
+  function findSnippetElementById(id) {
+    if (!clipboardListEl) return null;
+    for (const child of clipboardListEl.children) {
+      if (child.classList && child.classList.contains('clipboard-item') && child.dataset.snippetId === id) {
+        return child;
+      }
+    }
+    return null;
+  }
+
   function appendClipboardSnippet(rawSnippet) {
     if (!clipboardListEl) return;
     const snippet = sanitizeSnippetForView(rawSnippet);
     if (!snippet) return;
-    if (clipboardListEl.querySelector(`[data-snippet-id="${snippet.id}"]`)) return;
+    if (findSnippetElementById(snippet.id)) return;
 
     const empty = clipboardListEl.querySelector('.clipboard-empty');
     if (empty) empty.remove();
@@ -528,6 +602,16 @@
       clipboardListEl.removeChild(clipboardListEl.firstElementChild);
     }
     clipboardListEl.scrollTop = clipboardListEl.scrollHeight;
+  }
+
+  function removeClipboardSnippet(rawId) {
+    if (!clipboardListEl) return;
+    const id = sanitizeListItemId(rawId);
+    if (!id) return;
+    const item = findSnippetElementById(id);
+    if (!item) return;
+    item.remove();
+    renderClipboardEmptyState();
   }
 
   function replaceClipboardSnippets(rawSnippets) {
@@ -610,6 +694,19 @@
     });
   }
 
+  if (chatMessagesEl) {
+    chatMessagesEl.addEventListener('click', (e) => {
+      const deleteBtn = e.target.closest('[data-delete-chat]');
+      if (!deleteBtn) return;
+      const id = sanitizeListItemId(deleteBtn.dataset.deleteChat);
+      if (!id) return;
+      signaling.send({
+        type: 'chat-delete',
+        id,
+      });
+    });
+  }
+
   if (clipboardForm && clipboardInput && clipboardListEl) {
     renderClipboardEmptyState();
     if (clipboardAddBtn) clipboardAddBtn.disabled = true;
@@ -633,19 +730,30 @@
     });
 
     clipboardListEl.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-copy-snippet]');
-      if (!btn) return;
-      const item = btn.closest('.clipboard-item');
+      const deleteBtn = e.target.closest('[data-delete-snippet]');
+      if (deleteBtn) {
+        const id = sanitizeListItemId(deleteBtn.dataset.deleteSnippet);
+        if (!id) return;
+        signaling.send({
+          type: 'clipboard-delete',
+          id,
+        });
+        return;
+      }
+
+      const copyBtn = e.target.closest('[data-copy-snippet]');
+      if (!copyBtn) return;
+      const item = copyBtn.closest('.clipboard-item');
       const textEl = item ? item.querySelector('.clipboard-text') : null;
       const text = textEl ? textEl.textContent : '';
       if (!text) return;
 
       try {
         await navigator.clipboard.writeText(text);
-        const original = btn.textContent;
-        btn.textContent = 'Copied';
+        const original = copyBtn.textContent;
+        copyBtn.textContent = 'Copied';
         setTimeout(() => {
-          btn.textContent = original;
+          copyBtn.textContent = original;
         }, 1000);
       } catch {
         window.prompt('Copy this snippet:', text);

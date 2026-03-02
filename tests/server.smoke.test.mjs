@@ -215,6 +215,49 @@ function waitForMessageType(ws, type, timeoutMs = 5000) {
   });
 }
 
+function expectNoMessageType(ws, type, waitMs = 400) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, waitMs);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      ws.off('message', onMessage);
+      ws.off('close', onClose);
+      ws.off('error', onError);
+    };
+
+    const onMessage = (raw) => {
+      let msg;
+      try {
+        msg = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+      if (msg.type === type) {
+        cleanup();
+        reject(new Error(`Unexpected message type "${type}"`));
+      }
+    };
+
+    const onClose = () => {
+      cleanup();
+      reject(new Error(`WebSocket closed while waiting for no "${type}" message`));
+    };
+
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
+
+    ws.on('message', onMessage);
+    ws.on('close', onClose);
+    ws.on('error', onError);
+  });
+}
+
 test('server boots and serves core local endpoints', async (t) => {
   const { port } = await startServer(t);
 
@@ -315,8 +358,46 @@ test('chat messages broadcast to all registered peers', async (t) => {
   assert.equal(receivedByB.text, 'hello from alpha');
   assert.equal(receivedByA.name, 'alpha');
   assert.equal(receivedByB.name, 'alpha');
+  assert.equal(typeof receivedByA.id, 'string');
+  assert.equal(typeof receivedByB.id, 'string');
   assert.equal(typeof receivedByA.ts, 'number');
   assert.equal(typeof receivedByB.ts, 'number');
+});
+
+test('chat messages can only be deleted by the sender', async (t) => {
+  const { port } = await startServer(t);
+  const origin = `http://127.0.0.1:${port}`;
+
+  const wsA = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+  const wsB = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+
+  t.after(() => {
+    if (wsA.readyState === WebSocket.OPEN) wsA.close();
+    if (wsB.readyState === WebSocket.OPEN) wsB.close();
+  });
+
+  wsA.send(JSON.stringify({ type: 'register', name: 'alpha', deviceType: 'desktop' }));
+  wsB.send(JSON.stringify({ type: 'register', name: 'bravo', deviceType: 'desktop' }));
+  await waitForMessageType(wsA, 'registered');
+  await waitForMessageType(wsB, 'registered');
+
+  wsA.send(JSON.stringify({ type: 'chat-message', text: 'sender only delete' }));
+  const chatA = await waitForMessageType(wsA, 'chat-message');
+  const chatB = await waitForMessageType(wsB, 'chat-message');
+  assert.equal(chatA.id, chatB.id);
+  const messageId = chatA.id;
+
+  const noDeleteA = expectNoMessageType(wsA, 'chat-delete');
+  const noDeleteB = expectNoMessageType(wsB, 'chat-delete');
+  wsB.send(JSON.stringify({ type: 'chat-delete', id: messageId }));
+  await noDeleteA;
+  await noDeleteB;
+
+  wsA.send(JSON.stringify({ type: 'chat-delete', id: messageId }));
+  const deleteA = await waitForMessageType(wsA, 'chat-delete');
+  const deleteB = await waitForMessageType(wsB, 'chat-delete');
+  assert.equal(deleteA.id, messageId);
+  assert.equal(deleteB.id, messageId);
 });
 
 test('clipboard snippets broadcast and sync to new peers', async (t) => {
@@ -365,4 +446,52 @@ test('clipboard snippets broadcast and sync to new peers', async (t) => {
   const stateC = await wsCClipboardState;
   assert.ok(Array.isArray(stateC.snippets));
   assert.ok(stateC.snippets.some((snippet) => snippet.text === 'const LAN = true;'));
+});
+
+test('clipboard snippets can be deleted and are removed from sync state', async (t) => {
+  const { port } = await startServer(t);
+  const origin = `http://127.0.0.1:${port}`;
+
+  const wsA = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+  const wsB = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+
+  t.after(() => {
+    if (wsA.readyState === WebSocket.OPEN) wsA.close();
+    if (wsB.readyState === WebSocket.OPEN) wsB.close();
+  });
+
+  const wsARegistered = waitForMessageType(wsA, 'registered');
+  const wsAClipboardState = waitForMessageType(wsA, 'clipboard-state');
+  const wsBRegistered = waitForMessageType(wsB, 'registered');
+  const wsBClipboardState = waitForMessageType(wsB, 'clipboard-state');
+  wsA.send(JSON.stringify({ type: 'register', name: 'alpha', deviceType: 'desktop' }));
+  wsB.send(JSON.stringify({ type: 'register', name: 'bravo', deviceType: 'desktop' }));
+  await wsARegistered;
+  await wsAClipboardState;
+  await wsBRegistered;
+  await wsBClipboardState;
+
+  wsA.send(JSON.stringify({ type: 'clipboard-add', text: 'delete me' }));
+  const addA = await waitForMessageType(wsA, 'clipboard-add');
+  const addB = await waitForMessageType(wsB, 'clipboard-add');
+  assert.equal(addA.snippet.id, addB.snippet.id);
+  const snippetId = addA.snippet.id;
+
+  wsB.send(JSON.stringify({ type: 'clipboard-delete', id: snippetId }));
+  const deleteA = await waitForMessageType(wsA, 'clipboard-delete');
+  const deleteB = await waitForMessageType(wsB, 'clipboard-delete');
+  assert.equal(deleteA.id, snippetId);
+  assert.equal(deleteB.id, snippetId);
+
+  const wsC = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+  t.after(() => {
+    if (wsC.readyState === WebSocket.OPEN) wsC.close();
+  });
+  const wsCRegistered = waitForMessageType(wsC, 'registered');
+  const wsCClipboardState = waitForMessageType(wsC, 'clipboard-state');
+  wsC.send(JSON.stringify({ type: 'register', name: 'charlie', deviceType: 'desktop' }));
+  await wsCRegistered;
+  const stateC = await wsCClipboardState;
+  assert.ok(Array.isArray(stateC.snippets));
+  assert.ok(stateC.snippets.every((snippet) => snippet.id !== snippetId));
 });
