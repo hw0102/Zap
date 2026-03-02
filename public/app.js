@@ -94,6 +94,10 @@
   const shareUrlValue = $('#shareUrlValue');
   const shareUrlCopyBtn = $('#shareUrlCopyBtn');
   const shareUrlExtra = $('#shareUrlExtra');
+  const chatMessagesEl = $('#chatMessages');
+  const chatForm = $('#chatForm');
+  const chatInput = $('#chatInput');
+  const chatSendBtn = $('#chatSendBtn');
 
   // Hotspot mode DOM refs
   const hotspotView = $('#hotspotView');
@@ -128,6 +132,7 @@
   let hotspot = null; // HotspotSignaling instance when in hotspot mode
   let isOffline = false;
   let shareUrls = [];
+  const MAX_CHAT_ITEMS = 120;
 
   // ---- Signaling ----
 
@@ -139,7 +144,9 @@
   signaling.connect(myDeviceName, myDeviceType, authToken);
 
   signaling.on('registered', ({ id }) => {
+    isOffline = false;
     deviceNameEl.textContent = myDeviceName;
+    if (chatSendBtn) chatSendBtn.disabled = false;
   });
 
   signaling.on('peers', (peers) => {
@@ -150,6 +157,7 @@
 
   signaling.on('disconnected', () => {
     deviceNameEl.textContent = 'Reconnecting...';
+    if (chatSendBtn) chatSendBtn.disabled = true;
     // After a delay, if still not connected, offer hotspot mode
     setTimeout(() => {
       if (!signaling.myId || (signaling.ws && signaling.ws.readyState !== WebSocket.OPEN)) {
@@ -158,6 +166,10 @@
         showView('hotspot');
       }
     }, 4000);
+  });
+
+  signaling.on('chat-message', (msg) => {
+    appendChatMessage(msg);
   });
 
   // ---- Incoming signaling (callee side) ----
@@ -355,6 +367,71 @@
     }
   }
 
+  // ---- Session chat ----
+
+  function renderChatEmptyState() {
+    if (!chatMessagesEl || chatMessagesEl.children.length > 0) return;
+    const empty = document.createElement('p');
+    empty.className = 'chat-empty';
+    empty.textContent = 'No messages yet. Start the conversation for this LAN session.';
+    chatMessagesEl.appendChild(empty);
+  }
+
+  function formatChatTime(ts) {
+    const date = new Date(ts);
+    if (Number.isNaN(date.getTime())) return '--:--';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function resolveAuthorName(msg) {
+    if (typeof msg.name === 'string' && msg.name.trim()) return msg.name.trim();
+    if (msg.from === signaling.myId) return myDeviceName;
+    const peer = peerList.find((p) => p.id === msg.from);
+    return peer ? peer.name : 'Unknown device';
+  }
+
+  function appendChatMessage(msg) {
+    if (!chatMessagesEl || !msg || typeof msg.text !== 'string') return;
+    const text = msg.text.trim();
+    if (!text) return;
+
+    const empty = chatMessagesEl.querySelector('.chat-empty');
+    if (empty) empty.remove();
+
+    const messageEl = document.createElement('article');
+    messageEl.className = 'chat-message';
+    if (msg.from === signaling.myId) {
+      messageEl.classList.add('self');
+    }
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'chat-meta';
+
+    const authorEl = document.createElement('span');
+    authorEl.className = 'chat-author';
+    authorEl.textContent = resolveAuthorName(msg);
+
+    const timeEl = document.createElement('span');
+    timeEl.className = 'chat-time';
+    timeEl.textContent = formatChatTime(msg.ts || Date.now());
+
+    const textEl = document.createElement('p');
+    textEl.className = 'chat-text';
+    textEl.textContent = text;
+
+    metaEl.appendChild(authorEl);
+    metaEl.appendChild(timeEl);
+    messageEl.appendChild(metaEl);
+    messageEl.appendChild(textEl);
+    chatMessagesEl.appendChild(messageEl);
+
+    while (chatMessagesEl.children.length > MAX_CHAT_ITEMS) {
+      chatMessagesEl.removeChild(chatMessagesEl.firstElementChild);
+    }
+
+    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  }
+
   // ---- Render peers ----
 
   function renderPeers() {
@@ -398,6 +475,28 @@
       } catch {
         window.prompt('Copy this URL:', text);
       }
+    });
+  }
+
+  if (chatForm && chatInput) {
+    renderChatEmptyState();
+    if (chatSendBtn) chatSendBtn.disabled = true;
+
+    chatForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      if (text.length > 400) {
+        alert('Chat messages are limited to 400 characters.');
+        return;
+      }
+
+      signaling.send({
+        type: 'chat-message',
+        text,
+      });
+      chatInput.value = '';
+      chatInput.focus();
     });
   }
 

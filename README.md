@@ -89,14 +89,48 @@ Note: iOS Safari generally requires HTTPS for reliable WebRTC support.
 
 ### Create `certs/fullchain.pem` and `certs/privkey.pem`
 
-For local/private LAN testing, `mkcert` is the easiest option:
+#### Local LAN workflow with `mkcert` (macOS)
+
+1. Install `mkcert`:
 
 ```bash
 brew install mkcert
+```
+
+2. Install and trust the local CA (this prompts for your macOS admin password):
+
+```bash
 mkcert -install
+```
+
+3. Find your current LAN IP (use whichever interface is active):
+
+```bash
+ipconfig getifaddr en0 || ipconfig getifaddr en1
+```
+
+4. Generate cert/key files for localhost and that LAN IP:
+
+```bash
 mkdir -p certs
 mkcert -cert-file certs/fullchain.pem -key-file certs/privkey.pem localhost 127.0.0.1 ::1 <your-lan-ip>
 ```
+
+5. Start Zap in HTTPS mode:
+
+```bash
+npm start
+```
+
+6. Verify TLS trust:
+
+```bash
+curl -fsS https://localhost:3000 >/dev/null && echo "HTTPS trust OK"
+```
+
+Note: browser/curl trust checks are the right signal on macOS; Node.js TLS clients may still report trust errors unless explicitly configured to use system roots.
+
+If your machine's LAN IP changes, rerun step 4 with the new IP so the certificate SAN list stays valid.
 
 For a public DNS hostname, use Let's Encrypt:
 

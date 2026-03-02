@@ -288,3 +288,33 @@ test('local URL API enforces join token when configured', async (t) => {
   assert.ok(Array.isArray(parsed.urls));
   assert.ok(parsed.urls.every((url) => url.includes(`token=${encodeURIComponent(token)}`)));
 });
+
+test('chat messages broadcast to all registered peers', async (t) => {
+  const { port } = await startServer(t);
+  const origin = `http://127.0.0.1:${port}`;
+
+  const wsA = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+  const wsB = await connectWebSocket(`ws://127.0.0.1:${port}/`, origin);
+
+  t.after(() => {
+    if (wsA.readyState === WebSocket.OPEN) wsA.close();
+    if (wsB.readyState === WebSocket.OPEN) wsB.close();
+  });
+
+  wsA.send(JSON.stringify({ type: 'register', name: 'alpha', deviceType: 'desktop' }));
+  wsB.send(JSON.stringify({ type: 'register', name: 'bravo', deviceType: 'desktop' }));
+  await waitForMessageType(wsA, 'registered');
+  await waitForMessageType(wsB, 'registered');
+
+  wsA.send(JSON.stringify({ type: 'chat-message', text: 'hello from alpha' }));
+
+  const receivedByA = await waitForMessageType(wsA, 'chat-message');
+  const receivedByB = await waitForMessageType(wsB, 'chat-message');
+
+  assert.equal(receivedByA.text, 'hello from alpha');
+  assert.equal(receivedByB.text, 'hello from alpha');
+  assert.equal(receivedByA.name, 'alpha');
+  assert.equal(receivedByB.name, 'alpha');
+  assert.equal(typeof receivedByA.ts, 'number');
+  assert.equal(typeof receivedByB.ts, 'number');
+});

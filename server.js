@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -24,6 +23,7 @@ const MAX_FILE_NAME_LENGTH = parsePositiveInt(process.env.ZAP_MAX_FILE_NAME_LENG
 const MAX_TRANSFER_BYTES = parsePositiveInt(process.env.ZAP_MAX_TRANSFER_BYTES, 2 * 1024 * 1024 * 1024);
 const MAX_SDP_LENGTH = parsePositiveInt(process.env.ZAP_MAX_SDP_LENGTH, 64 * 1024);
 const MAX_ICE_CANDIDATE_LENGTH = parsePositiveInt(process.env.ZAP_MAX_ICE_CANDIDATE_LENGTH, 8192);
+const MAX_CHAT_MESSAGE_LENGTH = parsePositiveInt(process.env.ZAP_MAX_CHAT_MESSAGE_LENGTH, 400);
 const MAX_MIME_TYPE_LENGTH = 128;
 const RELAY_TYPES = new Set([
   'offer',
@@ -325,6 +325,13 @@ function sanitizeRelayMessage(type, msg) {
   }
 }
 
+function sanitizeChatText(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_CHAT_MESSAGE_LENGTH) return null;
+  return trimmed;
+}
+
 server.on('upgrade', (req, socket, head) => {
   const host = normalizeHost(req.headers.host);
 
@@ -407,6 +414,32 @@ wss.on('connection', (ws) => {
           safeSend(ws, JSON.stringify({ type: 'registered', id: peerId }));
         }
         broadcastPeerList();
+        break;
+      }
+
+      case 'chat-message': {
+        if (!registered) break;
+        const text = sanitizeChatText(msg.text);
+        if (!text) break;
+
+        const sender = peers.get(peerId);
+        if (!sender) break;
+
+        const payload = JSON.stringify({
+          type: 'chat-message',
+          from: peerId,
+          name: sender.name,
+          text,
+          ts: Date.now(),
+        });
+
+        const stale = [];
+        for (const [id, peer] of peers) {
+          if (!safeSend(peer.ws, payload)) stale.push(id);
+        }
+        for (const id of stale) {
+          peers.delete(id);
+        }
         break;
       }
 

@@ -73,6 +73,7 @@ class SignalingClient {
       case 'file-accept':
       case 'file-decline':
       case 'transfer-cancel':
+      case 'chat-message':
         this.emit(msg.type, msg);
         break;
     }
