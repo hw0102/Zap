@@ -1,7 +1,7 @@
 # PRD: Zap — Peer-to-Peer LAN File Sharing
 
 **Domain:** `zap.example.com`
-**Author:** REDACTED
+**Author:** Zap Team
 **Status:** Draft
 **Last Updated:** 2026-03-01
 
@@ -152,8 +152,8 @@ A single-page application with three states:
 ### 6.2 Device Naming
 
 Auto-assign friendly names based on User-Agent parsing:
-- "REDACTED's iPhone" (iOS Safari)
-- "REDACTED's MacBook" (macOS Chrome/Safari)
+- "Sender's iPhone" (iOS Safari)
+- "Sender's MacBook" (macOS Chrome/Safari)
 - Allow manual rename via click-to-edit
 
 ### 6.3 Responsive Design
