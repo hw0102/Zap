@@ -48,10 +48,18 @@
             <div class="radar-ring"></div>
             <div class="radar-ring"></div>
             <div class="radar-ring"></div>
-            <div class="radar-dot"></div>
+          <div class="radar-dot"></div>
           </div>
           <h2>Searching for devices...</h2>
-          <p>Open <strong>this URL</strong> on another device on the same network</p>
+          <p>Open this URL on another device on the same network.</p>
+          <div class="share-url-card">
+            <p class="share-url-label">Share this URL</p>
+            <div class="share-url-row">
+              <code id="shareUrlValue">Loading...</code>
+              <button class="share-copy-btn" id="shareUrlCopyBtn" type="button">Copy</button>
+            </div>
+            <p class="share-url-extra" id="shareUrlExtra" hidden></p>
+          </div>
         </div>
       </section>
 
@@ -261,9 +269,21 @@
   <script src="transfer.js"></script>
   <script src="hotspot.js"></script>
   <script src="app.js"></script>
+  <script src="/app-config.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      const isDev = Boolean(window.__ZAP_CONFIG__ && window.__ZAP_CONFIG__.isDev);
+      if (isDev) {
+        navigator.serviceWorker.getRegistrations()
+          .then((registrations) => Promise.all(registrations.map((r) => r.unregister())))
+          .then(() => {
+            if (!('caches' in window)) return;
+            return caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))));
+          })
+          .catch(() => {});
+      } else {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      }
     }
   </script>
 </body>

@@ -21,52 +21,66 @@ class FileSender {
   }
 
   async start() {
-    this.startTime = performance.now();
-    const ch = this.peerConn.dataChannel;
+    try {
+      this.startTime = performance.now();
+      const ch = this.peerConn.dataChannel;
 
-    // Send metadata as JSON string
-    ch.send(JSON.stringify({
-      type: 'file-meta',
-      name: this.file.name,
-      size: this.file.size,
-      mimeType: this.file.type,
-      totalChunks: this.totalChunks,
-    }));
+      if (!ch || ch.readyState !== 'open') {
+        throw new Error('Data channel not open');
+      }
 
-    for (let i = 0; i < this.totalChunks; i++) {
-      if (this.cancelled) return;
+      // Send metadata as JSON string
+      ch.send(JSON.stringify({
+        type: 'file-meta',
+        name: this.file.name,
+        size: this.file.size,
+        mimeType: this.file.type,
+        totalChunks: this.totalChunks,
+      }));
 
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, this.file.size);
-      const chunk = await this.readChunk(start, end);
-
-      // Flow control: wait if buffer is full
-      while (ch.bufferedAmount > BUFFER_THRESHOLD) {
-        await this.waitForDrain(ch);
+      for (let i = 0; i < this.totalChunks; i++) {
         if (this.cancelled) return;
+
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, this.file.size);
+        const chunk = await this.readChunk(start, end);
+
+        // Flow control: wait if buffer is full
+        while (ch.bufferedAmount > BUFFER_THRESHOLD) {
+          await this.waitForDrain(ch);
+          if (this.cancelled) return;
+        }
+
+        if (ch.readyState !== 'open') {
+          throw new Error('Data channel closed during transfer');
+        }
+
+        ch.send(chunk);
+        this.chunksSent++;
+
+        if (this.onProgress) {
+          const elapsed = (performance.now() - this.startTime) / 1000;
+          const bytesSent = end;
+          const speed = bytesSent / elapsed;
+          const remaining = (this.file.size - bytesSent) / speed;
+          this.onProgress({
+            percent: bytesSent / this.file.size,
+            bytesSent,
+            totalBytes: this.file.size,
+            speed,
+            eta: remaining,
+          });
+        }
       }
 
-      ch.send(chunk);
-      this.chunksSent++;
-
-      if (this.onProgress) {
-        const elapsed = (performance.now() - this.startTime) / 1000;
-        const bytesSent = end;
-        const speed = bytesSent / elapsed;
-        const remaining = (this.file.size - bytesSent) / speed;
-        this.onProgress({
-          percent: bytesSent / this.file.size,
-          bytesSent,
-          totalBytes: this.file.size,
-          speed,
-          eta: remaining,
-        });
-      }
+      // Send completion signal and wait for it to leave the send buffer
+      ch.send(JSON.stringify({ type: 'file-complete' }));
+      await this.waitForBufferDrain(ch);
+      if (this.onComplete) this.onComplete();
+    } catch (err) {
+      console.error('FileSender error:', err);
+      if (this.onError) this.onError(err);
     }
-
-    // Send completion signal
-    ch.send(JSON.stringify({ type: 'file-complete' }));
-    if (this.onComplete) this.onComplete();
   }
 
   readChunk(start, end) {
@@ -75,6 +89,16 @@ class FileSender {
       reader.onload = () => resolve(reader.result);
       reader.onerror = () => reject(reader.error);
       reader.readAsArrayBuffer(this.file.slice(start, end));
+    });
+  }
+
+  waitForBufferDrain(ch) {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (ch.bufferedAmount === 0) resolve();
+        else setTimeout(check, 10);
+      };
+      check();
     });
   }
 

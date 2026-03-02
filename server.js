@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 
@@ -8,6 +9,42 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || (isDev ? '127.0.0.1' : '0.0.0.0');
 
 const app = express();
+
+function getLanIPv4Addresses() {
+  const interfaces = os.networkInterfaces();
+  const addresses = new Set();
+
+  for (const entries of Object.values(interfaces)) {
+    for (const info of entries || []) {
+      const isIPv4 = info.family === 'IPv4' || info.family === 4;
+      if (!isIPv4 || info.internal) continue;
+      if (info.address.startsWith('169.254.')) continue;
+      addresses.add(info.address);
+    }
+  }
+
+  return [...addresses];
+}
+
+app.get('/api/local-urls', (req, res) => {
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const baseProto = typeof forwardedProto === 'string'
+    ? forwardedProto.split(',')[0].trim()
+    : '';
+  const protocol = baseProto || (req.socket.encrypted ? 'https' : 'http');
+  const omitPort = (protocol === 'http' && PORT === 80) || (protocol === 'https' && PORT === 443);
+  const portSegment = omitPort ? '' : `:${PORT}`;
+  const urls = getLanIPv4Addresses().map((ip) => `${protocol}://${ip}${portSegment}`);
+
+  res.json({ urls });
+});
+
+app.get('/app-config.js', (req, res) => {
+  res.type('application/javascript');
+  res.set('Cache-Control', 'no-store');
+  res.send(`window.__ZAP_CONFIG__ = { isDev: ${JSON.stringify(isDev)} };`);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 let server;

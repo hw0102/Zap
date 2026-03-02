@@ -15,13 +15,36 @@
     return 'desktop';
   }
 
+  // ---- Creative name generator ----
+
+  const NAME_ADJECTIVES = [
+    'swift', 'brave', 'calm', 'bold', 'cool', 'warm', 'keen', 'wild',
+    'wise', 'fair', 'kind', 'glad', 'happy', 'lucky', 'witty', 'noble',
+    'gentle', 'bright', 'quiet', 'sharp', 'vivid', 'cosmic', 'amber',
+    'coral', 'jade', 'merry', 'snowy', 'sunny', 'lunar', 'rapid',
+  ];
+
+  const NAME_NOUNS = [
+    'fox', 'owl', 'bear', 'wolf', 'deer', 'hawk', 'swan', 'dove',
+    'lynx', 'crow', 'panda', 'tiger', 'eagle', 'whale', 'otter',
+    'robin', 'finch', 'raven', 'koala', 'gecko', 'bison', 'moose',
+    'crane', 'heron', 'manta', 'falcon', 'badger', 'parrot', 'coyote',
+    'dolphin',
+  ];
+
+  function generateCreativeName() {
+    const adj = NAME_ADJECTIVES[Math.floor(Math.random() * NAME_ADJECTIVES.length)];
+    const noun = NAME_NOUNS[Math.floor(Math.random() * NAME_NOUNS.length)];
+    return `${adj}-${noun}`;
+  }
+
   function getDefaultDeviceName() {
     const stored = localStorage.getItem('zap-device-name');
     if (stored) return stored;
 
-    const type = detectDeviceType();
-    const labels = { desktop: 'Computer', phone: 'Phone', tablet: 'Tablet' };
-    return labels[type] || 'Device';
+    const name = generateCreativeName();
+    localStorage.setItem('zap-device-name', name);
+    return name;
   }
 
   function deviceIcon(type) {
@@ -68,6 +91,9 @@
   const acceptBtn = $('#acceptBtn');
   const declineBtn = $('#declineBtn');
   const completeMessage = $('#completeMessage');
+  const shareUrlValue = $('#shareUrlValue');
+  const shareUrlCopyBtn = $('#shareUrlCopyBtn');
+  const shareUrlExtra = $('#shareUrlExtra');
 
   // Hotspot mode DOM refs
   const hotspotView = $('#hotspotView');
@@ -97,9 +123,11 @@
   let peerConnection = null; // active PeerConnection instance
   let fileSender = null;
   let fileReceiver = null;
+  let pendingIncomingData = [];
   let pendingRequest = null; // incoming file request awaiting accept/decline
   let hotspot = null; // HotspotSignaling instance when in hotspot mode
   let isOffline = false;
+  let shareUrls = [];
 
   // ---- Signaling ----
 
@@ -135,18 +163,30 @@
 
   signaling.on('offer', async (msg) => {
     // Received an offer — we are the callee
-    if (peerConnection) peerConnection.close();
-    peerConnection = new PeerConnection(signaling, msg.from, false);
-    setupPeerConnectionHandlers(peerConnection, msg.from);
-    await peerConnection.handleOffer(msg.sdp);
+    try {
+      if (peerConnection) peerConnection.close();
+      peerConnection = new PeerConnection(signaling, msg.from, false);
+      setupPeerConnectionHandlers(peerConnection, msg.from);
+      await peerConnection.handleOffer(msg.sdp);
+    } catch (err) {
+      console.error('Error handling offer:', err);
+    }
   });
 
   signaling.on('answer', async (msg) => {
-    if (peerConnection) await peerConnection.handleAnswer(msg.sdp);
+    try {
+      if (peerConnection) await peerConnection.handleAnswer(msg.sdp);
+    } catch (err) {
+      console.error('Error handling answer:', err);
+    }
   });
 
   signaling.on('ice-candidate', async (msg) => {
-    if (peerConnection) await peerConnection.addIceCandidate(msg.candidate);
+    try {
+      if (peerConnection) await peerConnection.addIceCandidate(msg.candidate);
+    } catch (err) {
+      console.error('Error adding ICE candidate:', err);
+    }
   });
 
   signaling.on('file-request', (msg) => {
@@ -161,15 +201,35 @@
 
   signaling.on('file-accept', async (msg) => {
     // Receiver accepted — now establish WebRTC and send
-    if (peerConnection) peerConnection.close();
-    peerConnection = new PeerConnection(signaling, msg.from, true);
-    setupPeerConnectionHandlers(peerConnection, msg.from);
+    try {
+      if (peerConnection) peerConnection.close();
+      peerConnection = new PeerConnection(signaling, msg.from, true);
+      setupPeerConnectionHandlers(peerConnection, msg.from);
 
-    peerConnection.on('channel-open', () => {
-      startSending();
-    });
+      peerConnection.on('channel-open', () => {
+        clearTimeout(connectionTimeout);
+        startSending();
+      });
 
-    await peerConnection.createOffer();
+      // Timeout if WebRTC connection isn't established in 15 seconds
+      var connectionTimeout = setTimeout(() => {
+        if (fileSender) return; // already sending
+        console.error('WebRTC connection timed out');
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+        pendingFile = null;
+        showView('peers');
+        alert('Connection timed out. Make sure both devices are on the same network and try again.');
+      }, 15000);
+
+      await peerConnection.createOffer();
+    } catch (err) {
+      console.error('Error creating WebRTC offer:', err);
+      pendingFile = null;
+      showView('peers');
+    }
   });
 
   signaling.on('file-decline', () => {
@@ -180,22 +240,40 @@
     if (fileSender) fileSender.cancel();
     fileSender = null;
     fileReceiver = null;
+    pendingIncomingData = [];
     if (peerConnection) peerConnection.close();
     peerConnection = null;
     showView('peers');
   });
 
   function setupPeerConnectionHandlers(pc, remotePeerId) {
-    pc.on('channel-open', () => {
-      // If we are the receiver and accepted a file request, set up receiving
-      if (fileReceiver) {
-        pc.on('data', (data) => fileReceiver.handleData(data));
+    pendingIncomingData = [];
+
+    // Attach immediately so early messages (file-meta) are not dropped.
+    pc.on('data', (data) => {
+      if (!fileReceiver) {
+        pendingIncomingData.push(data);
+        return;
       }
+      fileReceiver.handleData(data);
     });
 
     pc.on('disconnected', () => {
       if (fileSender) fileSender.cancel();
     });
+
+    pc.on('ice-failed', () => {
+      console.error('ICE connection failed — cleaning up');
+      cleanupTransfer();
+      showView('peers');
+      alert('Could not connect to the other device. Make sure both devices are on the same network.');
+    });
+  }
+
+  function flushPendingIncomingData() {
+    if (!fileReceiver || pendingIncomingData.length === 0) return;
+    for (const data of pendingIncomingData) fileReceiver.handleData(data);
+    pendingIncomingData = [];
   }
 
   // ---- Views ----
@@ -216,6 +294,53 @@
       qrDisplay.hidden = true;
       qrScanner.hidden = true;
       hotspotConnected.hidden = true;
+    }
+  }
+
+  function renderShareUrls(urls) {
+    if (!shareUrlValue) return;
+
+    const unique = [...new Set((urls || []).filter(Boolean))];
+    const host = location.hostname;
+    const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    const fallback = isLocalhost ? [] : [location.origin];
+    shareUrls = unique.length > 0 ? unique : fallback;
+
+    if (shareUrls.length === 0) {
+      shareUrlValue.textContent = 'LAN URL unavailable';
+      if (shareUrlExtra) {
+        shareUrlExtra.hidden = false;
+        shareUrlExtra.textContent = 'Start with npm run dev:lan and reload this page.';
+      }
+      if (shareUrlCopyBtn) shareUrlCopyBtn.disabled = true;
+      return;
+    }
+
+    if (shareUrlCopyBtn) shareUrlCopyBtn.disabled = false;
+    shareUrlValue.textContent = shareUrls[0];
+
+    if (shareUrls.length > 1 && shareUrlExtra) {
+      shareUrlExtra.hidden = false;
+      shareUrlExtra.textContent = `Also available: ${shareUrls.slice(1).join('  |  ')}`;
+      return;
+    }
+
+    if (shareUrlExtra) {
+      shareUrlExtra.hidden = true;
+      shareUrlExtra.textContent = '';
+    }
+  }
+
+  async function loadShareUrls() {
+    if (!shareUrlValue) return;
+
+    try {
+      const resp = await fetch('/api/local-urls', { cache: 'no-store' });
+      if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
+      const body = await resp.json();
+      renderShareUrls(Array.isArray(body.urls) ? body.urls : []);
+    } catch {
+      renderShareUrls([location.origin]);
     }
   }
 
@@ -243,6 +368,23 @@
     const d = document.createElement('div');
     d.textContent = str;
     return d.innerHTML;
+  }
+
+  if (shareUrlCopyBtn) {
+    shareUrlCopyBtn.addEventListener('click', async () => {
+      const text = (shareUrls[0] || location.origin).trim();
+
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = shareUrlCopyBtn.textContent;
+        shareUrlCopyBtn.textContent = 'Copied';
+        setTimeout(() => {
+          shareUrlCopyBtn.textContent = original;
+        }, 1200);
+      } catch {
+        window.prompt('Copy this URL:', text);
+      }
+    });
   }
 
   // ---- Rename ----
@@ -274,6 +416,8 @@
     if (e.key === 'Enter') renameSaveBtn.click();
     if (e.key === 'Escape') renameCancelBtn.click();
   });
+
+  loadShareUrls();
 
   // ---- File selection ----
 
@@ -352,13 +496,9 @@
     fileReceiver = new FileReceiver();
     fileReceiver.onProgress = updateReceiveProgress;
     fileReceiver.onComplete = onReceiveComplete;
+    flushPendingIncomingData();
 
     showTransferUI(pendingRequest.meta.name, pendingRequest.meta.size, 'Receiving');
-
-    // If we already have a peer connection (offer was received), attach data handler
-    if (peerConnection) {
-      peerConnection.on('data', (data) => fileReceiver.handleData(data));
-    }
 
     signaling.send({ type: 'file-accept', to: pendingRequest.from });
     pendingRequest = null;
@@ -427,9 +567,15 @@
   function cleanupTransfer() {
     fileSender = null;
     fileReceiver = null;
-    if (peerConnection) {
-      peerConnection.close();
-      peerConnection = null;
+    pendingIncomingData = [];
+    // Delay closing the peer connection so the final file-complete message
+    // has time to reach the other side before the SCTP/ICE layers tear down.
+    const pc = peerConnection;
+    peerConnection = null;
+    if (pc) {
+      setTimeout(() => {
+        try { pc.close(); } catch {}
+      }, 2000);
     }
   }
 
@@ -442,6 +588,7 @@
     }
     fileSender = null;
     fileReceiver = null;
+    pendingIncomingData = [];
     pendingFile = null;
     showView('peers');
   });

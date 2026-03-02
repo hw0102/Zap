@@ -10,9 +10,14 @@ class PeerConnection {
     this.remotePeerId = remotePeerId;
     this.isCaller = isCaller;
     this.handlers = {};
+    this.remoteDescriptionSet = false;
+    this.pendingCandidates = [];
 
     this.pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
     });
 
     this.dataChannel = null;
@@ -43,6 +48,14 @@ class PeerConnection {
       if (state === 'connected') this.emit('connected');
       if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         this.emit('disconnected');
+      }
+    };
+
+    this.pc.oniceconnectionstatechange = () => {
+      const state = this.pc.iceConnectionState;
+      if (state === 'failed') {
+        console.error('ICE connection failed');
+        this.emit('ice-failed');
       }
     };
 
@@ -80,6 +93,8 @@ class PeerConnection {
 
   async handleOffer(sdp) {
     await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    this.remoteDescriptionSet = true;
+    await this.flushPendingCandidates();
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
     this.signaling.send({
@@ -91,13 +106,31 @@ class PeerConnection {
 
   async handleAnswer(sdp) {
     await this.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    this.remoteDescriptionSet = true;
+    await this.flushPendingCandidates();
   }
 
   async addIceCandidate(candidate) {
+    if (!this.remoteDescriptionSet) {
+      this.pendingCandidates.push(candidate);
+      return;
+    }
     try {
       await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch {
-      // ignore late candidates
+    } catch (e) {
+      console.warn('Failed to add ICE candidate:', e);
+    }
+  }
+
+  async flushPendingCandidates() {
+    const candidates = this.pendingCandidates;
+    this.pendingCandidates = [];
+    for (const candidate of candidates) {
+      try {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('Failed to add buffered ICE candidate:', e);
+      }
     }
   }
 

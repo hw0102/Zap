@@ -61,6 +61,18 @@ Development mode (HTTP):
 npm run dev
 ```
 
+Development mode on local network (HTTP):
+
+```bash
+npm run dev:lan
+```
+
+Then open Zap from another device on the same network at:
+
+```text
+http://<host-machine-lan-ip>:3000
+```
+
 Default mode:
 
 ```bash
