@@ -113,9 +113,34 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger-glow);
+}
+
+.device-badge.state-connected .status-dot {
   background: var(--success);
   box-shadow: 0 0 8px var(--success-glow);
-  animation: pulse-dot 2s ease-in-out infinite;
+  animation: none;
+}
+
+.device-badge.state-connecting .status-dot {
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success-glow);
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+.device-badge.state-disconnected .status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger-glow);
+  animation: none;
+}
+
+.device-badge.state-disconnected {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.device-badge.state-connected {
+  border-color: rgba(16, 185, 129, 0.35);
 }
 
 @keyframes pulse-dot {
@@ -134,6 +159,32 @@ body {
 
 .rename-btn:hover {
   color: var(--text);
+}
+
+.rename-btn[hidden],
+.reconnect-btn[hidden] {
+  display: none !important;
+}
+
+.reconnect-btn {
+  all: unset;
+  cursor: pointer;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 5px 10px;
+  transition: background var(--transition), color var(--transition), transform var(--transition);
+}
+
+.reconnect-btn:hover {
+  color: #fee2e2;
+  background: rgba(239, 68, 68, 0.24);
+  transform: translateY(-1px);
 }
 
 /* ---- Main ---- */

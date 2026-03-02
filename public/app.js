@@ -67,8 +67,10 @@
   const dropZone = $('#dropZone');
   const fileInput = $('#fileInput');
   const browseBtn = $('#browseBtn');
+  const deviceBadge = $('#deviceBadge');
   const deviceNameEl = $('#deviceName');
   const renameBtn = $('#renameBtn');
+  const reconnectBtn = $('#reconnectBtn');
   const renameModal = $('#renameModal');
   const renameInput = $('#renameInput');
   const renameCancelBtn = $('#renameCancelBtn');
@@ -146,10 +148,35 @@
   let myDeviceName = getDefaultDeviceName();
   const authToken = new URLSearchParams(location.search).get('token') || '';
 
+  function setConnectionIndicatorState(state) {
+    if (deviceBadge) {
+      deviceBadge.classList.remove('state-connected', 'state-connecting', 'state-disconnected');
+      deviceBadge.classList.add(`state-${state}`);
+    }
+
+    const isConnected = state === 'connected';
+    if (renameBtn) {
+      renameBtn.hidden = !isConnected;
+    }
+
+    if (!isConnected && renameModal && !renameModal.hidden) {
+      renameModal.hidden = true;
+    }
+  }
+
+  function setRefreshButtonVisible(visible) {
+    if (reconnectBtn) reconnectBtn.hidden = !visible;
+  }
+
+  setConnectionIndicatorState('connecting');
+  setRefreshButtonVisible(false);
+
   signaling.connect(myDeviceName, myDeviceType, authToken);
 
   signaling.on('registered', ({ id }) => {
     isOffline = false;
+    setConnectionIndicatorState('connected');
+    setRefreshButtonVisible(false);
     deviceNameEl.textContent = myDeviceName;
     if (chatSendBtn) chatSendBtn.disabled = false;
     if (clipboardAddBtn) clipboardAddBtn.disabled = false;
@@ -162,17 +189,26 @@
   });
 
   signaling.on('disconnected', () => {
+    setConnectionIndicatorState('connecting');
+    setRefreshButtonVisible(false);
     deviceNameEl.textContent = 'Reconnecting...';
     if (chatSendBtn) chatSendBtn.disabled = true;
     if (clipboardAddBtn) clipboardAddBtn.disabled = true;
-    // After a delay, if still not connected, offer hotspot mode
-    setTimeout(() => {
-      if (!signaling.myId || (signaling.ws && signaling.ws.readyState !== WebSocket.OPEN)) {
-        isOffline = true;
-        deviceNameEl.textContent = 'Offline';
-        showView('hotspot');
-      }
-    }, 4000);
+  });
+
+  signaling.on('reconnecting', ({ attempt, maxAttempts }) => {
+    isOffline = false;
+    setConnectionIndicatorState('connecting');
+    setRefreshButtonVisible(false);
+    deviceNameEl.textContent = `Reconnecting ${attempt}/${maxAttempts}...`;
+  });
+
+  signaling.on('reconnect-exhausted', () => {
+    isOffline = true;
+    setConnectionIndicatorState('disconnected');
+    setRefreshButtonVisible(true);
+    deviceNameEl.textContent = 'Offline';
+    showView('hotspot');
   });
 
   signaling.on('chat-message', (msg) => {
@@ -764,11 +800,21 @@
   // ---- Rename ----
 
   renameBtn.addEventListener('click', () => {
-    renameInput.value = deviceNameEl.textContent;
+    renameInput.value = myDeviceName;
     renameModal.hidden = false;
     renameInput.focus();
     renameInput.select();
   });
+
+  if (reconnectBtn) {
+    reconnectBtn.addEventListener('click', () => {
+      isOffline = false;
+      setConnectionIndicatorState('connecting');
+      setRefreshButtonVisible(false);
+      deviceNameEl.textContent = 'Reconnecting...';
+      signaling.manualReconnect();
+    });
+  }
 
   renameCancelBtn.addEventListener('click', () => {
     renameModal.hidden = true;

@@ -10,6 +10,9 @@ class SignalingClient {
     this.authToken = '';
     this.reconnectDelay = 1000;
     this.maxReconnectDelay = 8000;
+    this.maxReconnectAttempts = 5;
+    this.reconnectAttempts = 0;
+    this.reconnectTimer = null;
     this.handlers = {};
   }
 
@@ -25,33 +28,40 @@ class SignalingClient {
     this.deviceName = deviceName;
     this.deviceType = deviceType;
     this.authToken = typeof authToken === 'string' ? authToken : '';
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsPath = this.authToken ? `/?token=${encodeURIComponent(this.authToken)}` : '/';
     const url = `${proto}//${location.host}${wsPath}`;
-    this.ws = new WebSocket(url);
+    const ws = new WebSocket(url);
+    this.ws = ws;
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
       this.reconnectDelay = 1000;
-      this.ws.send(JSON.stringify({
+      this.reconnectAttempts = 0;
+      ws.send(JSON.stringify({
         type: 'register',
         name: deviceName,
         deviceType: deviceType,
       }));
     };
 
-    this.ws.onmessage = (e) => {
+    ws.onmessage = (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
       this.handleMessage(msg);
     };
 
-    this.ws.onclose = () => {
+    ws.onclose = () => {
+      if (this.ws === ws) this.ws = null;
       this.emit('disconnected');
       this.scheduleReconnect();
     };
 
-    this.ws.onerror = () => {
+    ws.onerror = () => {
       // onclose fires after onerror
     };
   }
@@ -90,9 +100,37 @@ class SignalingClient {
   }
 
   scheduleReconnect() {
-    setTimeout(() => {
-      this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, this.maxReconnectDelay);
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.emit('reconnect-exhausted', {
+        attempts: this.reconnectAttempts,
+        maxAttempts: this.maxReconnectAttempts,
+      });
+      return;
+    }
+
+    const attempt = this.reconnectAttempts + 1;
+    const delayMs = this.reconnectDelay;
+    this.emit('reconnecting', {
+      attempt,
+      maxAttempts: this.maxReconnectAttempts,
+      delayMs,
+    });
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.reconnectAttempts = attempt;
+      this.reconnectDelay = Math.min(Math.round(this.reconnectDelay * 1.5), this.maxReconnectDelay);
       this.connect(this.deviceName, this.deviceType, this.authToken);
-    }, this.reconnectDelay);
+    }, delayMs);
+  }
+
+  manualReconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempts = 0;
+    this.reconnectDelay = 1000;
+    this.connect(this.deviceName, this.deviceType, this.authToken);
   }
 }
