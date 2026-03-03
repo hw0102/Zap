@@ -6,6 +6,8 @@
 
 const CHUNK_SIZE = 64 * 1024; // 64 KB
 const BUFFER_THRESHOLD = 1 * 1024 * 1024; // 1 MB
+const DEFAULT_MAX_RECEIVE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
+const DEFAULT_TRANSFER_TIMEOUT_MS = 120000;
 
 class FileSender {
   constructor(peerConn, file) {
@@ -131,13 +133,21 @@ class FileSender {
 
 
 class FileReceiver {
-  constructor() {
+  constructor(options = {}) {
     this.meta = null;
     this.chunks = [];
     this.bytesReceived = 0;
     this.startTime = 0;
+    this.timeoutId = null;
+    this.maxReceiveBytes = Number.isInteger(options.maxReceiveBytes) && options.maxReceiveBytes > 0
+      ? options.maxReceiveBytes
+      : DEFAULT_MAX_RECEIVE_BYTES;
+    this.transferTimeoutMs = Number.isInteger(options.transferTimeoutMs) && options.transferTimeoutMs > 0
+      ? options.transferTimeoutMs
+      : DEFAULT_TRANSFER_TIMEOUT_MS;
     this.onProgress = null;
     this.onComplete = null;
+    this.onError = null;
   }
 
   handleData(data) {
@@ -147,14 +157,25 @@ class FileReceiver {
       try { msg = JSON.parse(data); } catch { return; }
 
       if (msg.type === 'file-meta') {
-        this.meta = msg;
+        const meta = this.validateMeta(msg);
+        if (!meta) {
+          this.fail(new Error('Invalid incoming file metadata'));
+          return;
+        }
+        this.meta = meta;
         this.chunks = [];
         this.bytesReceived = 0;
         this.startTime = performance.now();
+        this.touchTimeout();
         return;
       }
 
       if (msg.type === 'file-complete') {
+        if (!this.meta) return;
+        if (this.bytesReceived !== this.meta.size) {
+          this.fail(new Error('Incoming file ended before all bytes were received'));
+          return;
+        }
         this.assemble();
         return;
       }
@@ -163,15 +184,27 @@ class FileReceiver {
 
     // Binary chunk
     if (!this.meta) return;
+    const chunkLength = this.getChunkLength(data);
+    if (chunkLength === null) {
+      this.fail(new Error('Incoming transfer sent an unsupported chunk type'));
+      return;
+    }
+    const nextBytes = this.bytesReceived + chunkLength;
+    if (nextBytes > this.meta.size || nextBytes > this.maxReceiveBytes) {
+      this.fail(new Error('Incoming transfer exceeded expected size'));
+      return;
+    }
+
     this.chunks.push(data);
-    this.bytesReceived += data.byteLength;
+    this.bytesReceived = nextBytes;
+    this.touchTimeout();
 
     if (this.onProgress) {
-      const elapsed = (performance.now() - this.startTime) / 1000;
+      const elapsed = Math.max((performance.now() - this.startTime) / 1000, 0.001);
       const speed = this.bytesReceived / elapsed;
       const remaining = (this.meta.size - this.bytesReceived) / speed;
       this.onProgress({
-        percent: this.bytesReceived / this.meta.size,
+        percent: this.meta.size === 0 ? 1 : this.bytesReceived / this.meta.size,
         bytesReceived: this.bytesReceived,
         totalBytes: this.meta.size,
         speed,
@@ -180,12 +213,80 @@ class FileReceiver {
     }
   }
 
-  assemble() {
-    const blob = new Blob(this.chunks, { type: this.meta.mimeType || 'application/octet-stream' });
-    this.triggerDownload(blob, this.meta.name);
-    if (this.onComplete) this.onComplete({ name: this.meta.name, size: this.meta.size });
+  validateMeta(msg) {
+    if (!msg || typeof msg.name !== 'string') return null;
+
+    const name = msg.name.trim().slice(0, 255);
+    if (!name) return null;
+
+    const size = Number(msg.size);
+    if (!Number.isInteger(size) || size < 0 || size > this.maxReceiveBytes) return null;
+
+    let mimeType = '';
+    if (typeof msg.mimeType === 'string') {
+      mimeType = msg.mimeType.slice(0, 128);
+    }
+
+    return {
+      name,
+      size,
+      mimeType,
+    };
+  }
+
+  getChunkLength(data) {
+    if (data instanceof ArrayBuffer) return data.byteLength;
+    if (ArrayBuffer.isView(data)) return data.byteLength;
+    if (typeof Blob !== 'undefined' && data instanceof Blob) return data.size;
+    return null;
+  }
+
+  touchTimeout() {
+    if (!this.transferTimeoutMs) return;
+    if (this.timeoutId) clearTimeout(this.timeoutId);
+    this.timeoutId = setTimeout(() => {
+      this.fail(new Error('Incoming transfer timed out'));
+    }, this.transferTimeoutMs);
+  }
+
+  clearTimeoutGuard() {
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
+  }
+
+  resetTransferState() {
+    this.clearTimeoutGuard();
     this.meta = null;
     this.chunks = [];
+    this.bytesReceived = 0;
+    this.startTime = 0;
+  }
+
+  fail(err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    this.resetTransferState();
+    if (this.onError) this.onError(error);
+  }
+
+  dispose() {
+    this.resetTransferState();
+    this.onProgress = null;
+    this.onComplete = null;
+    this.onError = null;
+  }
+
+  assemble() {
+    try {
+      const info = { name: this.meta.name, size: this.meta.size };
+      const blob = new Blob(this.chunks, { type: this.meta.mimeType || 'application/octet-stream' });
+      this.triggerDownload(blob, this.meta.name);
+      this.resetTransferState();
+      if (this.onComplete) this.onComplete(info);
+    } catch (err) {
+      this.fail(err);
+    }
   }
 
   triggerDownload(blob, filename) {

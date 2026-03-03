@@ -30,6 +30,7 @@
         <div class="device-badge" id="deviceBadge">
           <span class="status-dot"></span>
           <span id="deviceName">Connecting...</span>
+          <button class="reconnect-btn" id="reconnectBtn" type="button" hidden>Refresh</button>
           <button class="rename-btn" id="renameBtn" title="Rename device">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
               <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
@@ -41,6 +42,17 @@
 
     <!-- Main content -->
     <main class="main">
+      <section class="persistent-share" aria-label="Share join URL">
+        <div class="share-url-card">
+          <p class="share-url-label">Share this URL</p>
+          <div class="share-url-row">
+            <code id="shareUrlValue">Loading...</code>
+            <button class="share-copy-btn" id="shareUrlCopyBtn" type="button">Copy</button>
+          </div>
+          <p class="share-url-extra" id="shareUrlExtra" hidden></p>
+        </div>
+      </section>
+
       <!-- Lobby state: waiting for peers -->
       <section id="lobbyView" class="view active">
         <div class="empty-state">
@@ -52,14 +64,6 @@
           </div>
           <h2>Searching for devices...</h2>
           <p>Open this URL on another device on the same network.</p>
-          <div class="share-url-card">
-            <p class="share-url-label">Share this URL</p>
-            <div class="share-url-row">
-              <code id="shareUrlValue">Loading...</code>
-              <button class="share-copy-btn" id="shareUrlCopyBtn" type="button">Copy</button>
-            </div>
-            <p class="share-url-extra" id="shareUrlExtra" hidden></p>
-          </div>
         </div>
       </section>
 
@@ -67,22 +71,66 @@
       <section id="peersView" class="view">
         <div class="peers-grid" id="peersGrid"></div>
 
-        <div class="drop-zone-container">
-          <div class="drop-zone" id="dropZone">
-            <div class="drop-zone-content">
-              <div class="drop-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="17 8 12 3 7 8"/>
-                  <line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
+        <div class="session-workspace">
+          <div class="drop-zone-container">
+            <div class="drop-zone" id="dropZone">
+              <div class="drop-zone-content">
+                <div class="drop-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                </div>
+                <p class="drop-label">Drop files here or <button class="browse-btn" id="browseBtn">browse</button></p>
+                <p class="drop-hint">Select a device above, then send a file</p>
               </div>
-              <p class="drop-label">Drop files here or <button class="browse-btn" id="browseBtn">browse</button></p>
-              <p class="drop-hint">Select a device above, then send a file</p>
             </div>
+            <input type="file" id="fileInput" hidden multiple>
           </div>
-          <input type="file" id="fileInput" hidden multiple>
-        </div>
+
+          <aside class="session-chat" aria-label="Session chat">
+            <div class="chat-header">
+              <h3>Session Chat</h3>
+              <p>Send quick notes to everyone currently in this session.</p>
+            </div>
+            <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-label="Chat messages"></div>
+            <form class="chat-form" id="chatForm">
+              <input
+                type="text"
+                id="chatInput"
+                class="chat-input"
+                maxlength="400"
+                placeholder="Type a message…"
+                autocomplete="off"
+              >
+              <button class="chat-send-btn" id="chatSendBtn" type="submit">Send</button>
+            </form>
+
+            <div class="clipboard-section" aria-label="Shared clipboard">
+              <div class="clipboard-header">
+                <h4>Shared Clipboard</h4>
+                <p>Create snippets anyone in this session can copy.</p>
+              </div>
+              <div
+                class="clipboard-list"
+                id="clipboardList"
+                role="log"
+                aria-live="polite"
+                aria-label="Clipboard snippets"
+              ></div>
+              <form class="clipboard-form" id="clipboardForm">
+                <textarea
+                  id="clipboardInput"
+                  class="clipboard-input"
+                  maxlength="800"
+                  placeholder="Add snippet text for quick copy/paste…"
+                ></textarea>
+                <button class="clipboard-add-btn" id="clipboardAddBtn" type="submit">Add Snippet</button>
+              </form>
+            </div>
+          </aside>
+          </div>
       </section>
 
       <!-- Transfer in progress -->
