@@ -1,8 +1,21 @@
 # Zap
 
+<p align="center">
+  <img src="public/zap-icon-alt-3a.svg" alt="Zap icon" width="144" />
+</p>
+
 Peer-to-peer local network file transfer in the browser using WebRTC.
 
 Zap is a local-first web app for quickly sending files between devices on the same LAN/hotspot. The server is only for peer discovery and signaling; file data is transferred directly between browsers.
+
+## Useful Scenarios
+
+1. **Unstable or no outside internet, but local network still works**
+   Teams on the same Wi-Fi/LAN can still share files, post quick session chat updates, and use shared clipboard snippets for coordination even when cloud chat/apps are unreliable.
+2. **Field operations / pop-up teams**
+   On construction sites, incident response setups, film sets, or lab environments, people can exchange photos, logs, and docs directly over a local hotspot without relying on external services.
+3. **Classrooms, workshops, and local events**
+   Instructors and participants can quickly distribute materials and gather submissions device-to-device on venue Wi-Fi, reducing setup friction and avoiding account sign-ins.
 
 ## Project Direction (Local Only)
 
@@ -195,4 +208,4 @@ GitHub Actions runs `.github/workflows/ci.yml` on:
 
 The workflow installs dependencies and runs `npm run check` on Node 18 and Node 20.
 
-For merge protection, set branch protection on `main` and require the CI status checks to pass before merging.
+Passing CI status checks are required before merging.

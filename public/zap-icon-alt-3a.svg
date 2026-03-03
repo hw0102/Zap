@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">Zap icon</title>
+  <title id="title">Zap icon alt 3A</title>
   <desc id="desc">Minimal monoline Z mark.</desc>
   <defs>
-    <linearGradient id="z512" x1="150" y1="152" x2="360" y2="360" gradientUnits="userSpaceOnUse">
+    <linearGradient id="z" x1="150" y1="152" x2="360" y2="360" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#22d3ee"/>
       <stop offset="1" stop-color="#6366f1"/>
     </linearGradient>
   </defs>
 
   <rect x="24" y="24" width="464" height="464" rx="108" fill="#0b1025"/>
-  <path d="M164 168h184l-184 176h184" fill="none" stroke="url(#z512)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M164 168h184l-184 176h184" fill="none" stroke="url(#z)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

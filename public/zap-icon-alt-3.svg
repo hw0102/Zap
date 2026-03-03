@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Zap icon alt 3</title>
+  <desc id="desc">Monogram-style Z with forward motion arrow.</desc>
+  <defs>
+    <linearGradient id="bg" x1="72" y1="64" x2="440" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#101635"/>
+      <stop offset="1" stop-color="#090a1a"/>
+    </linearGradient>
+    <linearGradient id="z" x1="156" y1="160" x2="356" y2="356" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bg)"/>
+
+  <path d="M164 168h184l-184 176h184" fill="none" stroke="url(#z)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M308 214l52 52-52 52" fill="none" stroke="#22d3ee" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
