@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Zap icon alt 3C</title>
+  <desc id="desc">Solid geometric lightning Z mark.</desc>
+  <defs>
+    <linearGradient id="z" x1="164" y1="148" x2="352" y2="366" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="#090d20"/>
+  <rect x="156" y="152" width="212" height="44" rx="12" fill="url(#z)"/>
+  <path d="M236 196h72l-76 120h-72z" fill="url(#z)"/>
+  <rect x="144" y="316" width="212" height="44" rx="12" fill="url(#z)"/>
+</svg>

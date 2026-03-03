@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Zap icon alt 2</title>
+  <desc id="desc">Simple node-to-node transfer icon.</desc>
+  <defs>
+    <linearGradient id="bg" x1="96" y1="72" x2="432" y2="456" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#131a36"/>
+      <stop offset="1" stop-color="#0a0a1a"/>
+    </linearGradient>
+    <linearGradient id="line" x1="130" y1="256" x2="382" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bg)"/>
+
+  <circle cx="150" cy="256" r="54" fill="#22d3ee"/>
+  <circle cx="362" cy="256" r="54" fill="#6366f1"/>
+
+  <path d="M204 256h104" fill="none" stroke="url(#line)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M286 232l24 24-24 24" fill="none" stroke="#22d3ee" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="150" cy="256" r="54" fill="none" stroke="#ffffff" stroke-opacity="0.2" stroke-width="3"/>
+  <circle cx="362" cy="256" r="54" fill="none" stroke="#ffffff" stroke-opacity="0.2" stroke-width="3"/>
+</svg>

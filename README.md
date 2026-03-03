@@ -1,5 +1,9 @@
 # Zap
 
+<p align="center">
+  <img src="public/zap-icon-alt-3a.svg" alt="Zap icon" width="144" />
+</p>
+
 Peer-to-peer local network file transfer in the browser using WebRTC.
 
 Zap is a local-first web app for quickly sending files between devices on the same LAN/hotspot. The server is only for peer discovery and signaling; file data is transferred directly between browsers.

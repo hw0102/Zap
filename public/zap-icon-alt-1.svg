@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Zap icon alt 1</title>
+  <desc id="desc">Minimal beacon icon with soft rings and center pulse.</desc>
+  <defs>
+    <linearGradient id="bg" x1="64" y1="64" x2="448" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#0a0a1a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="180" y1="150" x2="332" y2="362" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bg)"/>
+
+  <circle cx="256" cy="256" r="26" fill="#22d3ee"/>
+  <circle cx="256" cy="256" r="26" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="2"/>
+
+  <circle cx="256" cy="256" r="76" fill="none" stroke="url(#accent)" stroke-width="14" stroke-opacity="0.95"/>
+  <circle cx="256" cy="256" r="126" fill="none" stroke="url(#accent)" stroke-width="14" stroke-opacity="0.65"/>
+  <circle cx="256" cy="256" r="176" fill="none" stroke="url(#accent)" stroke-width="14" stroke-opacity="0.32"/>
+</svg>

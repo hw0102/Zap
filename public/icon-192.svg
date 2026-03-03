@@ -1,9 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="34.56" fill="#0a0a1a"/>
-  <g transform="translate(96, 96)" stroke="#6366f1" fill="none" stroke-width="7.68" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M0 -42.24L-42.24 -19.200000000000003 0 3.84 42.24 -19.200000000000003Z" fill="#6366f1" opacity="0.2"/>
-    <path d="M0 -42.24L-42.24 -19.200000000000003 0 3.84 42.24 -19.200000000000003Z"/>
-    <path d="M-42.24 3.84L0 26.880000000000003 42.24 3.84"/>
-    <path d="M-42.24 19.200000000000003L0 42.24 42.24 19.200000000000003"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-labelledby="title desc">
+  <title id="title">Zap icon</title>
+  <desc id="desc">Minimal monoline Z mark.</desc>
+  <defs>
+    <linearGradient id="z192" x1="56" y1="57" x2="135" y2="135" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="9" y="9" width="174" height="174" rx="40" fill="#0b1025"/>
+  <path d="M62 63h69l-69 66h69" fill="none" stroke="url(#z192)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
