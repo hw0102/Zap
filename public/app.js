@@ -67,8 +67,10 @@
   const dropZone = $('#dropZone');
   const fileInput = $('#fileInput');
   const browseBtn = $('#browseBtn');
+  const deviceBadge = $('#deviceBadge');
   const deviceNameEl = $('#deviceName');
   const renameBtn = $('#renameBtn');
+  const reconnectBtn = $('#reconnectBtn');
   const renameModal = $('#renameModal');
   const renameInput = $('#renameInput');
   const renameCancelBtn = $('#renameCancelBtn');
@@ -94,6 +96,14 @@
   const shareUrlValue = $('#shareUrlValue');
   const shareUrlCopyBtn = $('#shareUrlCopyBtn');
   const shareUrlExtra = $('#shareUrlExtra');
+  const chatMessagesEl = $('#chatMessages');
+  const chatForm = $('#chatForm');
+  const chatInput = $('#chatInput');
+  const chatSendBtn = $('#chatSendBtn');
+  const clipboardListEl = $('#clipboardList');
+  const clipboardForm = $('#clipboardForm');
+  const clipboardInput = $('#clipboardInput');
+  const clipboardAddBtn = $('#clipboardAddBtn');
 
   // Hotspot mode DOM refs
   const hotspotView = $('#hotspotView');
@@ -128,17 +138,48 @@
   let hotspot = null; // HotspotSignaling instance when in hotspot mode
   let isOffline = false;
   let shareUrls = [];
+  const MAX_CHAT_ITEMS = 120;
+  const MAX_CLIPBOARD_ITEMS = 120;
 
   // ---- Signaling ----
 
   const signaling = new SignalingClient();
   const myDeviceType = detectDeviceType();
   let myDeviceName = getDefaultDeviceName();
+  const authToken = new URLSearchParams(location.search).get('token') || '';
 
-  signaling.connect(myDeviceName, myDeviceType);
+  function setConnectionIndicatorState(state) {
+    if (deviceBadge) {
+      deviceBadge.classList.remove('state-connected', 'state-connecting', 'state-disconnected');
+      deviceBadge.classList.add(`state-${state}`);
+    }
+
+    const isConnected = state === 'connected';
+    if (renameBtn) {
+      renameBtn.hidden = !isConnected;
+    }
+
+    if (!isConnected && renameModal && !renameModal.hidden) {
+      renameModal.hidden = true;
+    }
+  }
+
+  function setRefreshButtonVisible(visible) {
+    if (reconnectBtn) reconnectBtn.hidden = !visible;
+  }
+
+  setConnectionIndicatorState('connecting');
+  setRefreshButtonVisible(false);
+
+  signaling.connect(myDeviceName, myDeviceType, authToken);
 
   signaling.on('registered', ({ id }) => {
+    isOffline = false;
+    setConnectionIndicatorState('connected');
+    setRefreshButtonVisible(false);
     deviceNameEl.textContent = myDeviceName;
+    if (chatSendBtn) chatSendBtn.disabled = false;
+    if (clipboardAddBtn) clipboardAddBtn.disabled = false;
   });
 
   signaling.on('peers', (peers) => {
@@ -148,15 +189,46 @@
   });
 
   signaling.on('disconnected', () => {
+    setConnectionIndicatorState('connecting');
+    setRefreshButtonVisible(false);
     deviceNameEl.textContent = 'Reconnecting...';
-    // After a delay, if still not connected, offer hotspot mode
-    setTimeout(() => {
-      if (!signaling.myId || (signaling.ws && signaling.ws.readyState !== WebSocket.OPEN)) {
-        isOffline = true;
-        deviceNameEl.textContent = 'Offline';
-        showView('hotspot');
-      }
-    }, 4000);
+    if (chatSendBtn) chatSendBtn.disabled = true;
+    if (clipboardAddBtn) clipboardAddBtn.disabled = true;
+  });
+
+  signaling.on('reconnecting', ({ attempt, maxAttempts }) => {
+    isOffline = false;
+    setConnectionIndicatorState('connecting');
+    setRefreshButtonVisible(false);
+    deviceNameEl.textContent = `Reconnecting ${attempt}/${maxAttempts}...`;
+  });
+
+  signaling.on('reconnect-exhausted', () => {
+    isOffline = true;
+    setConnectionIndicatorState('disconnected');
+    setRefreshButtonVisible(true);
+    deviceNameEl.textContent = 'Offline';
+    showView('hotspot');
+  });
+
+  signaling.on('chat-message', (msg) => {
+    appendChatMessage(msg);
+  });
+
+  signaling.on('chat-delete', (msg) => {
+    removeChatMessage(msg.id);
+  });
+
+  signaling.on('clipboard-state', (msg) => {
+    replaceClipboardSnippets(msg.snippets);
+  });
+
+  signaling.on('clipboard-add', (msg) => {
+    appendClipboardSnippet(msg.snippet);
+  });
+
+  signaling.on('clipboard-delete', (msg) => {
+    removeClipboardSnippet(msg.id);
   });
 
   // ---- Incoming signaling (callee side) ----
@@ -239,6 +311,7 @@
   signaling.on('transfer-cancel', () => {
     if (fileSender) fileSender.cancel();
     fileSender = null;
+    if (fileReceiver) fileReceiver.dispose();
     fileReceiver = null;
     pendingIncomingData = [];
     if (peerConnection) peerConnection.close();
@@ -303,7 +376,10 @@
     const unique = [...new Set((urls || []).filter(Boolean))];
     const host = location.hostname;
     const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-    const fallback = isLocalhost ? [] : [location.origin];
+    const localShareUrl = authToken
+      ? `${location.origin}/?token=${encodeURIComponent(authToken)}`
+      : location.origin;
+    const fallback = isLocalhost ? [] : [localShareUrl];
     shareUrls = unique.length > 0 ? unique : fallback;
 
     if (shareUrls.length === 0) {
@@ -335,13 +411,255 @@
     if (!shareUrlValue) return;
 
     try {
-      const resp = await fetch('/api/local-urls', { cache: 'no-store' });
+      const endpoint = authToken
+        ? `/api/local-urls?token=${encodeURIComponent(authToken)}`
+        : '/api/local-urls';
+      const resp = await fetch(endpoint, { cache: 'no-store' });
       if (!resp.ok) throw new Error(`Request failed (${resp.status})`);
       const body = await resp.json();
       renderShareUrls(Array.isArray(body.urls) ? body.urls : []);
     } catch {
-      renderShareUrls([location.origin]);
+      const localShareUrl = authToken
+        ? `${location.origin}/?token=${encodeURIComponent(authToken)}`
+        : location.origin;
+      renderShareUrls([localShareUrl]);
     }
+  }
+
+  // ---- Session chat ----
+
+  function renderChatEmptyState() {
+    if (!chatMessagesEl || chatMessagesEl.children.length > 0) return;
+    const empty = document.createElement('p');
+    empty.className = 'chat-empty';
+    empty.textContent = 'No messages yet. Start the conversation for this LAN session.';
+    chatMessagesEl.appendChild(empty);
+  }
+
+  function formatChatTime(ts) {
+    const date = new Date(ts);
+    if (Number.isNaN(date.getTime())) return '--:--';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function resolveAuthorName(msg) {
+    if (typeof msg.name === 'string' && msg.name.trim()) return msg.name.trim();
+    if (msg.from === signaling.myId) return myDeviceName;
+    const peer = peerList.find((p) => p.id === msg.from);
+    return peer ? peer.name : 'Unknown device';
+  }
+
+  function sanitizeListItemId(value) {
+    if (typeof value !== 'string') return null;
+    const id = value.trim();
+    if (!id || id.length > 64) return null;
+    return id;
+  }
+
+  function findChatMessageElementById(id) {
+    if (!chatMessagesEl) return null;
+    for (const child of chatMessagesEl.children) {
+      if (child.classList && child.classList.contains('chat-message') && child.dataset.chatId === id) {
+        return child;
+      }
+    }
+    return null;
+  }
+
+  function appendChatMessage(msg) {
+    if (!chatMessagesEl || !msg || typeof msg.text !== 'string') return;
+    const text = msg.text.trim();
+    if (!text) return;
+    const messageId = sanitizeListItemId(msg.id);
+    if (messageId && findChatMessageElementById(messageId)) return;
+
+    const empty = chatMessagesEl.querySelector('.chat-empty');
+    if (empty) empty.remove();
+
+    const messageEl = document.createElement('article');
+    messageEl.className = 'chat-message';
+    if (messageId) {
+      messageEl.dataset.chatId = messageId;
+    }
+    if (msg.from === signaling.myId) {
+      messageEl.classList.add('self');
+    }
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'chat-meta';
+
+    const authorEl = document.createElement('span');
+    authorEl.className = 'chat-author';
+    authorEl.textContent = resolveAuthorName(msg);
+
+    const timeEl = document.createElement('span');
+    timeEl.className = 'chat-time';
+    timeEl.textContent = formatChatTime(msg.ts || Date.now());
+
+    const textEl = document.createElement('p');
+    textEl.className = 'chat-text';
+    textEl.textContent = text;
+
+    metaEl.appendChild(authorEl);
+    metaEl.appendChild(timeEl);
+    messageEl.appendChild(metaEl);
+    messageEl.appendChild(textEl);
+
+    if (messageId && msg.from === signaling.myId) {
+      const actionsEl = document.createElement('div');
+      actionsEl.className = 'chat-actions';
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'chat-delete-btn';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.dataset.deleteChat = messageId;
+      deleteBtn.setAttribute('aria-label', 'Delete this message');
+
+      actionsEl.appendChild(deleteBtn);
+      messageEl.appendChild(actionsEl);
+    }
+
+    chatMessagesEl.appendChild(messageEl);
+
+    while (chatMessagesEl.children.length > MAX_CHAT_ITEMS) {
+      chatMessagesEl.removeChild(chatMessagesEl.firstElementChild);
+    }
+
+    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  }
+
+  function removeChatMessage(rawId) {
+    if (!chatMessagesEl) return;
+    const id = sanitizeListItemId(rawId);
+    if (!id) return;
+    const messageEl = findChatMessageElementById(id);
+    if (!messageEl) return;
+    messageEl.remove();
+    renderChatEmptyState();
+  }
+
+  function renderClipboardEmptyState() {
+    if (!clipboardListEl || clipboardListEl.children.length > 0) return;
+    const empty = document.createElement('p');
+    empty.className = 'clipboard-empty';
+    empty.textContent = 'No snippets yet. Add text for everyone to copy quickly.';
+    clipboardListEl.appendChild(empty);
+  }
+
+  function sanitizeSnippetForView(snippet) {
+    if (!snippet || typeof snippet !== 'object') return null;
+    if (typeof snippet.id !== 'string' || snippet.id.length > 64) return null;
+    if (typeof snippet.text !== 'string') return null;
+    const text = snippet.text.trim();
+    if (!text || text.length > 800) return null;
+
+    const name = typeof snippet.name === 'string' && snippet.name.trim()
+      ? snippet.name.trim().slice(0, 50)
+      : 'Unknown device';
+    const ts = Number.isFinite(Number(snippet.ts)) ? Number(snippet.ts) : Date.now();
+
+    return {
+      id: snippet.id,
+      text,
+      name,
+      ts,
+    };
+  }
+
+  function createClipboardItemElement(snippet) {
+    const item = document.createElement('article');
+    item.className = 'clipboard-item';
+    item.dataset.snippetId = snippet.id;
+
+    const header = document.createElement('div');
+    header.className = 'clipboard-item-header';
+
+    const author = document.createElement('span');
+    author.className = 'clipboard-author';
+    author.textContent = snippet.name;
+
+    const time = document.createElement('span');
+    time.className = 'clipboard-time';
+    time.textContent = formatChatTime(snippet.ts);
+
+    const text = document.createElement('p');
+    text.className = 'clipboard-text';
+    text.textContent = snippet.text;
+
+    const actions = document.createElement('div');
+    actions.className = 'clipboard-actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'clipboard-copy-btn';
+    copyBtn.type = 'button';
+    copyBtn.textContent = 'Copy';
+    copyBtn.dataset.copySnippet = snippet.id;
+    copyBtn.setAttribute('aria-label', 'Copy snippet text');
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'clipboard-delete-btn';
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.dataset.deleteSnippet = snippet.id;
+    deleteBtn.setAttribute('aria-label', 'Delete snippet');
+
+    actions.appendChild(copyBtn);
+    actions.appendChild(deleteBtn);
+    header.appendChild(author);
+    header.appendChild(time);
+    item.appendChild(header);
+    item.appendChild(text);
+    item.appendChild(actions);
+    return item;
+  }
+
+  function findSnippetElementById(id) {
+    if (!clipboardListEl) return null;
+    for (const child of clipboardListEl.children) {
+      if (child.classList && child.classList.contains('clipboard-item') && child.dataset.snippetId === id) {
+        return child;
+      }
+    }
+    return null;
+  }
+
+  function appendClipboardSnippet(rawSnippet) {
+    if (!clipboardListEl) return;
+    const snippet = sanitizeSnippetForView(rawSnippet);
+    if (!snippet) return;
+    if (findSnippetElementById(snippet.id)) return;
+
+    const empty = clipboardListEl.querySelector('.clipboard-empty');
+    if (empty) empty.remove();
+
+    clipboardListEl.appendChild(createClipboardItemElement(snippet));
+    while (clipboardListEl.children.length > MAX_CLIPBOARD_ITEMS) {
+      clipboardListEl.removeChild(clipboardListEl.firstElementChild);
+    }
+    clipboardListEl.scrollTop = clipboardListEl.scrollHeight;
+  }
+
+  function removeClipboardSnippet(rawId) {
+    if (!clipboardListEl) return;
+    const id = sanitizeListItemId(rawId);
+    if (!id) return;
+    const item = findSnippetElementById(id);
+    if (!item) return;
+    item.remove();
+    renderClipboardEmptyState();
+  }
+
+  function replaceClipboardSnippets(rawSnippets) {
+    if (!clipboardListEl) return;
+    clipboardListEl.innerHTML = '';
+    const snippets = Array.isArray(rawSnippets) ? rawSnippets : [];
+    for (const raw of snippets) {
+      const snippet = sanitizeSnippetForView(raw);
+      if (!snippet) continue;
+      clipboardListEl.appendChild(createClipboardItemElement(snippet));
+    }
+    renderClipboardEmptyState();
   }
 
   // ---- Render peers ----
@@ -372,7 +690,10 @@
 
   if (shareUrlCopyBtn) {
     shareUrlCopyBtn.addEventListener('click', async () => {
-      const text = (shareUrls[0] || location.origin).trim();
+      const localShareUrl = authToken
+        ? `${location.origin}/?token=${encodeURIComponent(authToken)}`
+        : location.origin;
+      const text = (shareUrls[0] || localShareUrl).trim();
 
       try {
         await navigator.clipboard.writeText(text);
@@ -387,14 +708,113 @@
     });
   }
 
+  if (chatForm && chatInput) {
+    renderChatEmptyState();
+    if (chatSendBtn) chatSendBtn.disabled = true;
+
+    chatForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      if (text.length > 400) {
+        alert('Chat messages are limited to 400 characters.');
+        return;
+      }
+
+      signaling.send({
+        type: 'chat-message',
+        text,
+      });
+      chatInput.value = '';
+      chatInput.focus();
+    });
+  }
+
+  if (chatMessagesEl) {
+    chatMessagesEl.addEventListener('click', (e) => {
+      const deleteBtn = e.target.closest('[data-delete-chat]');
+      if (!deleteBtn) return;
+      const id = sanitizeListItemId(deleteBtn.dataset.deleteChat);
+      if (!id) return;
+      signaling.send({
+        type: 'chat-delete',
+        id,
+      });
+    });
+  }
+
+  if (clipboardForm && clipboardInput && clipboardListEl) {
+    renderClipboardEmptyState();
+    if (clipboardAddBtn) clipboardAddBtn.disabled = true;
+
+    clipboardForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = clipboardInput.value.trim();
+      if (!text) return;
+      if (text.length > 800) {
+        alert('Clipboard snippets are limited to 800 characters.');
+        return;
+      }
+
+      signaling.send({
+        type: 'clipboard-add',
+        text,
+      });
+
+      clipboardInput.value = '';
+      clipboardInput.focus();
+    });
+
+    clipboardListEl.addEventListener('click', async (e) => {
+      const deleteBtn = e.target.closest('[data-delete-snippet]');
+      if (deleteBtn) {
+        const id = sanitizeListItemId(deleteBtn.dataset.deleteSnippet);
+        if (!id) return;
+        signaling.send({
+          type: 'clipboard-delete',
+          id,
+        });
+        return;
+      }
+
+      const copyBtn = e.target.closest('[data-copy-snippet]');
+      if (!copyBtn) return;
+      const item = copyBtn.closest('.clipboard-item');
+      const textEl = item ? item.querySelector('.clipboard-text') : null;
+      const text = textEl ? textEl.textContent : '';
+      if (!text) return;
+
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = copyBtn.textContent;
+        copyBtn.textContent = 'Copied';
+        setTimeout(() => {
+          copyBtn.textContent = original;
+        }, 1000);
+      } catch {
+        window.prompt('Copy this snippet:', text);
+      }
+    });
+  }
+
   // ---- Rename ----
 
   renameBtn.addEventListener('click', () => {
-    renameInput.value = deviceNameEl.textContent;
+    renameInput.value = myDeviceName;
     renameModal.hidden = false;
     renameInput.focus();
     renameInput.select();
   });
+
+  if (reconnectBtn) {
+    reconnectBtn.addEventListener('click', () => {
+      isOffline = false;
+      setConnectionIndicatorState('connecting');
+      setRefreshButtonVisible(false);
+      deviceNameEl.textContent = 'Reconnecting...';
+      signaling.manualReconnect();
+    });
+  }
 
   renameCancelBtn.addEventListener('click', () => {
     renameModal.hidden = true;
@@ -496,6 +916,7 @@
     fileReceiver = new FileReceiver();
     fileReceiver.onProgress = updateReceiveProgress;
     fileReceiver.onComplete = onReceiveComplete;
+    fileReceiver.onError = onReceiveError;
     flushPendingIncomingData();
 
     showTransferUI(pendingRequest.meta.name, pendingRequest.meta.size, 'Receiving');
@@ -531,7 +952,7 @@
     fileSender = new FileSender(peerConnection, pendingFile);
     fileSender.onProgress = updateSendProgress;
     fileSender.onComplete = onSendComplete;
-    fileSender.onError = (err) => console.error('Send error:', err);
+    fileSender.onError = onSendError;
     fileSender.start();
     pendingFile = null;
   }
@@ -566,8 +987,33 @@
     cleanupTransfer();
   }
 
+  function returnToReadyView() {
+    const hotspotChannel = hotspot && hotspot.getDataChannel ? hotspot.getDataChannel() : null;
+    if (hotspotChannel && hotspotChannel.readyState === 'open') {
+      showView('hotspot');
+      showHotspotSubview('connected');
+      return;
+    }
+    showView('peers');
+  }
+
+  function onSendError(err) {
+    console.error('Send error:', err);
+    cleanupTransfer();
+    returnToReadyView();
+    alert('Transfer failed while sending. Please try again.');
+  }
+
+  function onReceiveError(err) {
+    console.error('Receive error:', err);
+    cleanupTransfer();
+    returnToReadyView();
+    alert('Transfer failed while receiving. Please ask the sender to retry.');
+  }
+
   function cleanupTransfer() {
     fileSender = null;
+    if (fileReceiver) fileReceiver.dispose();
     fileReceiver = null;
     pendingIncomingData = [];
     // Delay closing the peer connection so the final file-complete message
@@ -589,6 +1035,7 @@
       peerConnection = null;
     }
     fileSender = null;
+    if (fileReceiver) fileReceiver.dispose();
     fileReceiver = null;
     pendingIncomingData = [];
     pendingFile = null;
@@ -679,6 +1126,7 @@
         // Auto-create receiver on first data
         fileReceiver = new FileReceiver();
         fileReceiver.onProgress = updateReceiveProgress;
+        fileReceiver.onError = onReceiveError;
         fileReceiver.onComplete = (info) => {
           onReceiveComplete(info);
           // Return to hotspot connected view after completion

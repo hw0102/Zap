@@ -81,10 +81,75 @@ PORT=8080 npm start
 Behavior:
 
 - If both files exist and you run `npm start`, Zap starts with HTTPS.
-- Otherwise it falls back to HTTP.
-- `npm run dev` and `npm run dev:lan` use HTTP.
+- If cert files are missing, `npm start` fails closed (won't start).
+- `npm run dev` and `npm run dev:lan` are still HTTP for local development.
+- If you intentionally want insecure HTTP in start mode, use `ALLOW_INSECURE_HTTP=1 npm start` (or `node server.js --insecure-http`).
 
 Note: iOS Safari generally requires HTTPS for reliable WebRTC support.
+
+### Create `certs/fullchain.pem` and `certs/privkey.pem`
+
+#### Local LAN workflow with `mkcert` (macOS)
+
+1. Install `mkcert`:
+
+```bash
+brew install mkcert
+```
+
+2. Install and trust the local CA (this prompts for your macOS admin password):
+
+```bash
+mkcert -install
+```
+
+3. Find your current LAN IP (use whichever interface is active):
+
+```bash
+ipconfig getifaddr en0 || ipconfig getifaddr en1
+```
+
+4. Generate cert/key files for localhost and that LAN IP:
+
+```bash
+mkdir -p certs
+mkcert -cert-file certs/fullchain.pem -key-file certs/privkey.pem localhost 127.0.0.1 ::1 <your-lan-ip>
+```
+
+5. Start Zap in HTTPS mode:
+
+```bash
+npm start
+```
+
+6. Verify TLS trust:
+
+```bash
+curl -fsS https://localhost:3000 >/dev/null && echo "HTTPS trust OK"
+```
+
+Note: browser/curl trust checks are the right signal on macOS; Node.js TLS clients may still report trust errors unless explicitly configured to use system roots.
+
+If your machine's LAN IP changes, rerun step 4 with the new IP so the certificate SAN list stays valid.
+
+For a public DNS hostname, use Let's Encrypt:
+
+```bash
+sudo certbot certonly --standalone -d your-hostname.example.com
+mkdir -p certs
+sudo cp /etc/letsencrypt/live/your-hostname.example.com/fullchain.pem certs/fullchain.pem
+sudo cp /etc/letsencrypt/live/your-hostname.example.com/privkey.pem certs/privkey.pem
+sudo chown "$(whoami)" certs/fullchain.pem certs/privkey.pem
+chmod 600 certs/privkey.pem
+```
+
+## Signaling Hardening Options
+
+- `ZAP_JOIN_TOKEN`: Optional shared token for signaling/auth-protected LAN use. Start with a token and open Zap using `https://<host>:3000/?token=<token>`.
+- `ZAP_WS_MAX_PAYLOAD`: Max signaling message size in bytes (default `262144`).
+- `ZAP_WS_RATE_WINDOW_MS`: Rate-limit window for signaling messages (default `5000`).
+- `ZAP_WS_RATE_MAX_MESSAGES`: Allowed messages per connection per window (default `120`).
+- `ZAP_MAX_TRANSFER_BYTES`: Max accepted transfer size for metadata validation (default `2147483648`).
 
 ## Usage
 
@@ -114,7 +179,7 @@ If signaling server connection fails, the app can switch to Hotspot Mode:
 
 ## Scripts
 
-- `npm start`: Run server (uses HTTPS if certs are present)
+- `npm start`: Run secure server (requires TLS certs unless you explicitly set `ALLOW_INSECURE_HTTP=1`)
 - `npm run dev`: Run local dev server bound to loopback (`127.0.0.1`)
 - `npm run dev:lan`: Run dev server bound to all interfaces (`0.0.0.0`)
 - `npm run check:syntax`: Syntax-check backend and frontend JS files
